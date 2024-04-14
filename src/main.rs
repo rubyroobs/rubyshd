@@ -1,11 +1,9 @@
-
 use std::collections::HashMap;
 use std::io::{self, BufReader, Read, Write};
 use std::{slice, str, fmt};
 use std::sync::Arc;
 use bytes::BytesMut;
 use std::{fs, net};
-
 use log::{debug, error, info};
 use tokio::io::{copy, sink, split, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -15,7 +13,7 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::server::WebPkiClientVerifier;
 use rustls::{RootCertStore, ServerConnection};
 use x509_parser::prelude::*;
-
+use url::{Url};
 use httparse;
 
 const MAX_REQUEST_HEADER_SIZE: usize = 2048;
@@ -25,58 +23,9 @@ const TLS_SERVER_PRIVATE_KEY_PEM_FILENAME: &str = "localhost.pem";
 // const TLS_SERVER_CERTIFICATE_PEM_FILENAME: &str = "ruby.sh.fullchain.pem";
 // const TLS_SERVER_PRIVATE_KEY_PEM_FILENAME: &str = "ruby.sh.pem";
 
-
-pub struct Request {
-    method: Slice,
-    path: Slice,
-    version: u8,
-    // TODO: use a small vec to avoid this unconditional allocation
-    headers: Vec<(Slice, Slice)>,
-    data: BytesMut,
-}
-
-type Slice = (usize, usize);
-
-pub struct RequestHeaders<'req> {
-    headers: slice::Iter<'req, (Slice, Slice)>,
-    req: &'req Request,
-}
-
-impl<'req> Iterator for RequestHeaders<'req> {
-    type Item = (&'req str, &'req [u8]);
-
-    fn next(&mut self) -> Option<(&'req str, &'req [u8])> {
-        self.headers.next().map(|&(ref a, ref b)| {
-            let a = self.req.slice(a);
-            let b = self.req.slice(b);
-            (str::from_utf8(a).unwrap(), b)
-        })
-    }
-}
-
-impl Request {
-    pub fn method(&self) -> &str {
-        str::from_utf8(self.slice(&self.method)).unwrap()
-    }
-
-    pub fn path(&self) -> &str {
-        str::from_utf8(self.slice(&self.path)).unwrap()
-    }
-
-    pub fn version(&self) -> u8 {
-        self.version
-    }
-
-    pub fn headers(&self) -> RequestHeaders {
-        RequestHeaders {
-            headers: self.headers.iter(),
-            req: self,
-        }
-    }
-
-    fn slice(&self, slice: &Slice) -> &[u8] {
-        &self.data[slice.0..slice.1]
-    }
+struct Request {
+    url: Url,
+    client_common_name: String,
 }
 
 fn load_certs(filename: &str) -> Vec<CertificateDer<'static>> {
@@ -162,18 +111,27 @@ async fn main() -> io::Result<()> {
         let fut = async move {
             let mut stream = acceptor.accept(stream).await?;
 
-            match stream.get_ref().1.peer_certificates() {
+            let cn = match stream.get_ref().1.peer_certificates() {
                 Some(certs) => {
-                    for cert in certs {
+                    certs.iter().next().and_then(|cert| {
                         match parse_x509_certificate(cert) {
                             Ok((e, parsed_cert)) => {
-                                info!("{}", parsed_cert.subject());
+                                parsed_cert
+                                    .subject()
+                                    .iter_common_name()
+                                    .next()
+                                    .and_then(|cn| {
+                                        match cn.as_str() {
+                                            Ok(cn) => Some(cn.to_owned()),
+                                            _ => None
+                                        }
+                                    })
                             },
-                            Err(err) => error!("couldn't parse cert")
+                            Err(err) => None
                         }
-                    }
+                    })
                 },
-                None => debug!("no tls certs for req")
+                None => None
             };
 
             let mut buf = [0u8; MAX_REQUEST_HEADER_SIZE];
@@ -190,6 +148,7 @@ async fn main() -> io::Result<()> {
             match buf {
                 buf if buf.starts_with(b"gemini:") => {
                     // Gemini
+                    println!("hello gemini! uri: {}", std::str::from_utf8(&buf).unwrap());
                     stream
                         .write_all(
                             &b"20 text/gemini\r\n\
@@ -212,17 +171,20 @@ async fn main() -> io::Result<()> {
                         httparse::Status::Partial => 0,
                     };
         
-                    info!("{:?} {:?}", r.method.unwrap_or("hey"), r.path.unwrap_or("hey"));
-        
-                    stream
-                        .write_all(
-                            &b"HTTP/1.0 200 ok\r\n\
-                        Connection: close\r\n\
-                        Content-length: 12\r\n\
-                        \r\n\
-                        Hello world!"[..],
-                        )
-                        .await?;
+                    let response = format!("Hey, {}", cn.unwrap_or("anonymous".to_string()));
+
+                    // Headers
+                    stream.write_all(&b"HTTP/1.1 200 OK\r\n"[..]).await?;
+                    stream.write_all(&b"Content-Length: "[..]).await?;
+                    stream.write_all(response.len().to_string().as_bytes()).await?;
+                    stream.write_all(&b"\r\n"[..]).await?;
+
+                    stream.write_all(&b"\r\n"[..]).await?;
+
+                    // Body
+                    stream.write_all(response.as_bytes()).await?;
+
+                    stream.write_all(&b"\r\n"[..]).await?;
                 }
             }
 
