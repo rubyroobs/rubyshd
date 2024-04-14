@@ -1,280 +1,81 @@
 
 use std::collections::HashMap;
 use std::io::{self, BufReader, Read, Write};
+use std::{slice, str, fmt};
 use std::sync::Arc;
+use bytes::BytesMut;
 use std::{fs, net};
 
 use log::{debug, error, info};
-use mio::net::{TcpListener, TcpStream};
+use tokio::io::{copy, sink, split, AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio_rustls::{rustls, TlsAcceptor};
 use rustls::crypto::{aws_lc_rs as provider, CryptoProvider};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::server::WebPkiClientVerifier;
-use rustls::RootCertStore;
+use rustls::{RootCertStore, ServerConnection};
 use x509_parser::prelude::*;
 
-// Token for our listening socket.
-const LISTENER: mio::Token = mio::Token(0);
+use httparse;
 
-/// This binds together a TCP listening socket, some outstanding
-/// connections, and a TLS server configuration.
-struct TlsServer {
-    server: TcpListener,
-    connections: HashMap<mio::Token, OpenConnection>,
-    next_id: usize,
-    tls_config: Arc<rustls::ServerConfig>,
+const MAX_REQUEST_HEADER_SIZE: usize = 2048;
+const TLS_CLIENT_CA_CERTIFICATE_PEM_FILENAME: &str = "ca.cert.pem";
+const TLS_SERVER_CERTIFICATE_PEM_FILENAME: &str = "localhost.cert.pem";
+const TLS_SERVER_PRIVATE_KEY_PEM_FILENAME: &str = "localhost.pem";
+// const TLS_SERVER_CERTIFICATE_PEM_FILENAME: &str = "ruby.sh.fullchain.pem";
+// const TLS_SERVER_PRIVATE_KEY_PEM_FILENAME: &str = "ruby.sh.pem";
+
+
+pub struct Request {
+    method: Slice,
+    path: Slice,
+    version: u8,
+    // TODO: use a small vec to avoid this unconditional allocation
+    headers: Vec<(Slice, Slice)>,
+    data: BytesMut,
 }
 
-impl TlsServer {
-    fn new(server: TcpListener, cfg: Arc<rustls::ServerConfig>) -> Self {
-        Self {
-            server,
-            connections: HashMap::new(),
-            next_id: 2,
-            tls_config: cfg,
-        }
-    }
+type Slice = (usize, usize);
 
-    fn accept(&mut self, registry: &mio::Registry) -> Result<(), io::Error> {
-        loop {
-            match self.server.accept() {
-                Ok((socket, addr)) => {
-                    debug!("Accepting new connection from {:?}", addr);
+pub struct RequestHeaders<'req> {
+    headers: slice::Iter<'req, (Slice, Slice)>,
+    req: &'req Request,
+}
 
-                    let tls_conn =
-                        rustls::ServerConnection::new(Arc::clone(&self.tls_config)).unwrap();
+impl<'req> Iterator for RequestHeaders<'req> {
+    type Item = (&'req str, &'req [u8]);
 
-                    let token = mio::Token(self.next_id);
-                    self.next_id += 1;
-
-                    let mut connection = OpenConnection::new(socket, token, tls_conn);
-                    connection.register(registry);
-                    self.connections
-                        .insert(token, connection);
-                }
-                Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => return Ok(()),
-                Err(err) => {
-                    println!(
-                        "encountered error while accepting connection; err={:?}",
-                        err
-                    );
-                    return Err(err);
-                }
-            }
-        }
-    }
-
-    fn conn_event(&mut self, registry: &mio::Registry, event: &mio::event::Event) {
-        let token = event.token();
-
-        if self.connections.contains_key(&token) {
-            self.connections
-                .get_mut(&token)
-                .unwrap()
-                .ready(registry, event);
-
-            if self.connections[&token].is_closed() {
-                self.connections.remove(&token);
-            }
-        }
+    fn next(&mut self) -> Option<(&'req str, &'req [u8])> {
+        self.headers.next().map(|&(ref a, ref b)| {
+            let a = self.req.slice(a);
+            let b = self.req.slice(b);
+            (str::from_utf8(a).unwrap(), b)
+        })
     }
 }
 
-/// This is a connection which has been accepted by the server,
-/// and is currently being served.
-///
-/// It has a TCP-level stream, a TLS-level connection state, and some
-/// other state/metadata.
-struct OpenConnection {
-    socket: TcpStream,
-    token: mio::Token,
-    closing: bool,
-    closed: bool,
-    tls_conn: rustls::ServerConnection,
-    sent_http_response: bool,
-}
-
-/// This used to be conveniently exposed by mio: map EWOULDBLOCK
-/// errors to something less-errory.
-fn try_read(r: io::Result<usize>) -> io::Result<Option<usize>> {
-    match r {
-        Ok(len) => Ok(Some(len)),
-        Err(e) => {
-            if e.kind() == io::ErrorKind::WouldBlock {
-                Ok(None)
-            } else {
-                Err(e)
-            }
-        }
+impl Request {
+    pub fn method(&self) -> &str {
+        str::from_utf8(self.slice(&self.method)).unwrap()
     }
-}
 
-impl OpenConnection {
-    fn new(
-        socket: TcpStream,
-        token: mio::Token,
-        tls_conn: rustls::ServerConnection,
-    ) -> Self {
-        Self {
-            socket,
-            token,
-            closing: false,
-            closed: false,
-            tls_conn,
-            sent_http_response: false,
+    pub fn path(&self) -> &str {
+        str::from_utf8(self.slice(&self.path)).unwrap()
+    }
+
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+
+    pub fn headers(&self) -> RequestHeaders {
+        RequestHeaders {
+            headers: self.headers.iter(),
+            req: self,
         }
     }
 
-    /// We're a connection, and we have something to do.
-    fn ready(&mut self, registry: &mio::Registry, ev: &mio::event::Event) {
-        // If we're readable: read some TLS.  Then
-        // see if that yielded new plaintext.
-        if ev.is_readable() {
-            self.do_tls_read();
-            self.try_plain_read();
-        }
-
-        if ev.is_writable() {
-            self.do_tls_write_and_handle_error();
-        }
-
-        if self.closing {
-            let _ = self
-                .socket
-                .shutdown(net::Shutdown::Both);
-            self.closed = true;
-            self.deregister(registry);
-        } else {
-            self.reregister(registry);
-        }
-    }
-
-    fn do_tls_read(&mut self) {
-        // Read some TLS data.
-        match self.tls_conn.read_tls(&mut self.socket) {
-            Err(err) => {
-                if let io::ErrorKind::WouldBlock = err.kind() {
-                    return;
-                }
-
-                error!("read error {:?}", err);
-                self.closing = true;
-                return;
-            }
-            Ok(0) => {
-                debug!("eof");
-                self.closing = true;
-                return;
-            }
-            Ok(_) => {}
-        };
-
-        // Process newly-received TLS messages.
-        if let Err(err) = self.tls_conn.process_new_packets() {
-            error!("cannot process packet: {:?}", err);
-
-            // last gasp write to send any alerts
-            self.do_tls_write_and_handle_error();
-
-            self.closing = true;
-        }
-    }
-
-    fn try_plain_read(&mut self) {
-        // Read and process all available plaintext.
-        if let Ok(io_state) = self.tls_conn.process_new_packets() {
-            if io_state.plaintext_bytes_to_read() > 0 {
-                let mut buf = vec![0u8; io_state.plaintext_bytes_to_read()];
-
-                self.tls_conn
-                    .reader()
-                    .read_exact(&mut buf)
-                    .unwrap();
-
-                debug!("plaintext read {:?}", buf.len());
-                self.incoming_plaintext(&buf);
-            }
-        }
-    }
-
-    /// Process some amount of received plaintext.
-    fn incoming_plaintext(&mut self, buf: &[u8]) {
-        match self.tls_conn.peer_certificates() {
-            Some(certs) => {
-                for cert in certs {
-                    match parse_x509_certificate(cert) {
-                        Ok((e, parsed_cert)) => info!("{}", parsed_cert.subject()),
-                        Err(err) => error!("couldn't parse cert")
-                    }
-                }
-            },
-            None => debug!("no tls certs for req")
-        };
-        self.send_http_response_once();
-    }
-
-    fn send_http_response_once(&mut self) {
-        let response =
-            b"HTTP/1.0 200 OK\r\nConnection: close\r\n\r\nHello world from rustls tlsserver\r\n";
-        if !self.sent_http_response {
-            self.tls_conn
-                .writer()
-                .write_all(response)
-                .unwrap();
-            self.sent_http_response = true;
-            self.tls_conn.send_close_notify();
-        }
-    }
-
-    fn tls_write(&mut self) -> io::Result<usize> {
-        self.tls_conn
-            .write_tls(&mut self.socket)
-    }
-
-    fn do_tls_write_and_handle_error(&mut self) {
-        let rc = self.tls_write();
-        if rc.is_err() {
-            error!("write failed {:?}", rc);
-            self.closing = true;
-        }
-    }
-
-    fn register(&mut self, registry: &mio::Registry) {
-        let event_set = self.event_set();
-        registry
-            .register(&mut self.socket, self.token, event_set)
-            .unwrap();
-    }
-
-    fn reregister(&mut self, registry: &mio::Registry) {
-        let event_set = self.event_set();
-        registry
-            .reregister(&mut self.socket, self.token, event_set)
-            .unwrap();
-    }
-
-    fn deregister(&mut self, registry: &mio::Registry) {
-        registry
-            .deregister(&mut self.socket)
-            .unwrap();
-    }
-
-    /// What IO events we're currently waiting for,
-    /// based on wants_read/wants_write.
-    fn event_set(&self) -> mio::Interest {
-        let rd = self.tls_conn.wants_read();
-        let wr = self.tls_conn.wants_write();
-
-        if rd && wr {
-            mio::Interest::READABLE | mio::Interest::WRITABLE
-        } else if wr {
-            mio::Interest::WRITABLE
-        } else {
-            mio::Interest::READABLE
-        }
-    }
-
-    fn is_closed(&self) -> bool {
-        self.closed
+    fn slice(&self, slice: &Slice) -> &[u8] {
+        &self.data[slice.0..slice.1]
     }
 }
 
@@ -307,7 +108,7 @@ fn load_private_key(filename: &str) -> PrivateKeyDer<'static> {
 }
 
 fn make_config() -> Arc<rustls::ServerConfig> {
-    let client_root_certs = load_certs("ca.cert.pem");
+    let client_root_certs = load_certs(TLS_CLIENT_CA_CERTIFICATE_PEM_FILENAME);
     let mut client_auth_roots = RootCertStore::empty();
     for root in client_root_certs {
         client_auth_roots.add(root).unwrap();
@@ -320,8 +121,8 @@ fn make_config() -> Arc<rustls::ServerConfig> {
     let versions = rustls::ALL_VERSIONS.to_vec();
     let suites = provider::ALL_CIPHER_SUITES.to_vec();
 
-    let certs = load_certs("ruby.sh.fullchain.pem");
-    let privkey = load_private_key("ruby.sh.pem");
+    let certs = load_certs(TLS_SERVER_CERTIFICATE_PEM_FILENAME);
+    let privkey = load_private_key(TLS_SERVER_PRIVATE_KEY_PEM_FILENAME);
 
     let mut config = rustls::ServerConfig::builder_with_provider(
         CryptoProvider {
@@ -341,7 +142,8 @@ fn make_config() -> Arc<rustls::ServerConfig> {
     Arc::new(config)
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> io::Result<()> {
     env_logger::init();
 
     let mut addr: net::SocketAddr = "[::]:443".parse().unwrap();
@@ -349,36 +151,93 @@ fn main() {
 
     let config = make_config();
 
-    let mut listener = TcpListener::bind(addr).expect("cannot listen on port");
-    println!("listening on {addr}");
-    let mut poll = mio::Poll::new().unwrap();
-    poll.registry()
-        .register(&mut listener, LISTENER, mio::Interest::READABLE)
-        .unwrap();
+    let acceptor = TlsAcceptor::from(config);
 
+    let listener = TcpListener::bind(&addr).await?;
 
-    let mut tlsserv = TlsServer::new(listener, config);
-
-    let mut events = mio::Events::with_capacity(256);
     loop {
-        match poll.poll(&mut events, None) {
-            Ok(_) => {}
-            // Polling can be interrupted (e.g. by a debugger) - retry if so.
-            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(e) => {
-                panic!("poll failed: {:?}", e)
-            }
-        }
+        let (stream, peer_addr) = listener.accept().await?;
+        let acceptor = acceptor.clone();
 
-        for event in events.iter() {
-            match event.token() {
-                LISTENER => {
-                    tlsserv
-                        .accept(poll.registry())
-                        .expect("error accepting socket");
-                }
-                _ => tlsserv.conn_event(poll.registry(), event),
+        let fut = async move {
+            let mut stream = acceptor.accept(stream).await?;
+
+            match stream.get_ref().1.peer_certificates() {
+                Some(certs) => {
+                    for cert in certs {
+                        match parse_x509_certificate(cert) {
+                            Ok((e, parsed_cert)) => {
+                                info!("{}", parsed_cert.subject());
+                            },
+                            Err(err) => error!("couldn't parse cert")
+                        }
+                    }
+                },
+                None => debug!("no tls certs for req")
+            };
+
+            let mut buf = [0u8; MAX_REQUEST_HEADER_SIZE];
+            let n = stream.read(&mut buf[..]).await?;
+            if n == MAX_REQUEST_HEADER_SIZE {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "request bigger than max size",
+                ));
             }
-        }
+
+            let mut output = sink();
+
+            match buf {
+                buf if buf.starts_with(b"gemini:") => {
+                    // Gemini
+                    stream
+                        .write_all(
+                            &b"20 text/gemini\r\n\
+                        Hello world!"[..],
+                        )
+                        .await?;
+                }
+                _ => {
+                    // HTTP
+                    let mut headers = [httparse::EMPTY_HEADER; 16];
+                    let mut r = httparse::Request::new(&mut headers);
+                    let status  = httparse::ParserConfig::default()
+                        .parse_request(&mut r, &buf)
+                        .map_err(|e| {
+                            let msg = format!("failed to parse http request: {:?}", e);
+                            io::Error::new(io::ErrorKind::Other, msg)
+                        })?;
+                    let amt = match status {
+                        httparse::Status::Complete(amt) => amt,
+                        httparse::Status::Partial => 0,
+                    };
+        
+                    info!("{:?} {:?}", r.method.unwrap_or("hey"), r.path.unwrap_or("hey"));
+        
+                    stream
+                        .write_all(
+                            &b"HTTP/1.0 200 ok\r\n\
+                        Connection: close\r\n\
+                        Content-length: 12\r\n\
+                        \r\n\
+                        Hello world!"[..],
+                        )
+                        .await?;
+                }
+            }
+
+            stream.shutdown().await?;
+            copy(&mut stream, &mut output).await?;
+
+            println!("Hello: {}", peer_addr);
+        
+            Ok(()) as io::Result<()>
+        };
+
+        tokio::spawn(async move {
+            if let Err(err) = fut.await {
+                eprintln!("{:?}", err);
+            }
+        });
     }
 }
