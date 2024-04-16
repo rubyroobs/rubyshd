@@ -1,20 +1,17 @@
-use std::collections::HashMap;
-use std::io::{self, BufReader, Read, Write};
-use std::{slice, str, fmt};
-use std::sync::Arc;
-use bytes::BytesMut;
-use std::{fs, net};
-use log::{debug, error, info};
-use tokio::io::{copy, sink, split, AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
-use tokio_rustls::{rustls, TlsAcceptor};
+use httparse;
+use log::{error, info};
 use rustls::crypto::{aws_lc_rs as provider, CryptoProvider};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::server::WebPkiClientVerifier;
-use rustls::{RootCertStore, ServerConnection};
+use rustls::RootCertStore;
+use std::io::{self, BufReader};
+use std::sync::Arc;
+use std::{fs, net, str};
+use tokio::io::{copy, sink, split, AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio_rustls::{rustls, TlsAcceptor};
+use url::Url;
 use x509_parser::prelude::*;
-use url::{Url};
-use httparse;
 
 const MAX_REQUEST_HEADER_SIZE: usize = 2048;
 const TLS_CLIENT_CA_CERTIFICATE_PEM_FILENAME: &str = "ca.cert.pem";
@@ -26,6 +23,11 @@ const TLS_SERVER_PRIVATE_KEY_PEM_FILENAME: &str = "localhost.pem";
 struct Request {
     url: Url,
     client_common_name: String,
+}
+
+struct HttpHeaderEntry {
+    name: String,
+    value: String,
 }
 
 fn load_certs(filename: &str) -> Vec<CertificateDer<'static>> {
@@ -91,6 +93,10 @@ fn make_config() -> Arc<rustls::ServerConfig> {
     Arc::new(config)
 }
 
+fn safe_str(str: &str) -> &str {
+    str.lines().next().unwrap_or("")
+}
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
@@ -108,93 +114,152 @@ async fn main() -> io::Result<()> {
         let (stream, peer_addr) = listener.accept().await?;
         let acceptor = acceptor.clone();
 
-        let fut = async move {
-            let mut stream = acceptor.accept(stream).await?;
+        let fut =
+            async move {
+                let mut stream = acceptor.accept(stream).await?;
 
-            let cn = match stream.get_ref().1.peer_certificates() {
-                Some(certs) => {
-                    certs.iter().next().and_then(|cert| {
-                        match parse_x509_certificate(cert) {
-                            Ok((e, parsed_cert)) => {
-                                parsed_cert
-                                    .subject()
-                                    .iter_common_name()
-                                    .next()
-                                    .and_then(|cn| {
-                                        match cn.as_str() {
-                                            Ok(cn) => Some(cn.to_owned()),
-                                            _ => None
-                                        }
-                                    })
+                let cert = match stream.get_ref().1.peer_certificates() {
+                    Some(der_certs) => {
+                        match der_certs.iter().next() {
+                            Some(first_der_cert) => {
+                                match parse_x509_certificate(first_der_cert) {
+                                    Ok((_, cert)) => Some(cert),
+                                    Err(_) => None
+                                }
                             },
-                            Err(err) => None
+                            None => None
                         }
-                    })
-                },
-                None => None
-            };
+                    },
+                    None => None
+                };
 
-            let mut buf = [0u8; MAX_REQUEST_HEADER_SIZE];
-            let n = stream.read(&mut buf[..]).await?;
-            if n == MAX_REQUEST_HEADER_SIZE {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "request bigger than max size",
-                ));
-            }
+                let common_name = match cert.clone() {
+                    Some(cert_data) => match cert_data.subject().iter_common_name().next() {
+                        Some(cn) => match cn.as_str() {
+                            Ok(cn_str) => Some(cn_str.to_string()),
+                            Err(_) => None,
+                        },
+                        None => None
+                    },
+                    None => None
+                };
+                
+                // if let Some(der_certs) = stream.get_ref().1.peer_certificates() {
+                //     if let Some(der_cert) = der_certs.iter().next() {
+                //         if let Ok((_, parsed_cert)) = parse_x509_certificate(der_cert) {
+                //             let cloned_cert = parsed_cert.clone();
+                //             if let Some(first) = cloned_cert.subject().iter_common_name().next() {
+                //                 if let Ok(parsed_cn) = first.as_str() {
+                //                     cn = Some(parsed_cn);
+                //                 }
+                //             }
+                //         }
+                //     }
+                // }
 
-            let mut output = sink();
+                let mut buf = [0u8; MAX_REQUEST_HEADER_SIZE];
+                let n = stream.read(&mut buf[..]).await?;
+                if n == MAX_REQUEST_HEADER_SIZE {
+                    error!("Request from {}: request bigger than max size", peer_addr);
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "request bigger than max size",
+                    ));
+                }
 
-            match buf {
-                buf if buf.starts_with(b"gemini:") => {
-                    // Gemini
-                    println!("hello gemini! uri: {}", std::str::from_utf8(&buf).unwrap());
-                    stream
-                        .write_all(
-                            &b"20 text/gemini\r\n\
+                let mut output = sink();
+
+                match buf {
+                    buf if buf.starts_with(b"gemini:") => {
+                        // Gemini
+                        println!("hello gemini! uri: {}", std::str::from_utf8(&buf).unwrap());
+                        stream
+                            .write_all(
+                                &b"20 text/gemini\r\n\
                         Hello world!"[..],
-                        )
-                        .await?;
+                            )
+                            .await?;
+                    }
+                    _ => {
+                        // HTTP
+                        let mut headers = [httparse::EMPTY_HEADER; 16];
+                        let mut r = httparse::Request::new(&mut headers);
+                        let status = httparse::ParserConfig::default()
+                            .parse_request(&mut r, &buf)
+                            .map_err(|e| {
+                                let msg = format!("failed to parse http request: {:?}", e);
+                                io::Error::new(io::ErrorKind::Other, msg)
+                            })?;
+
+                        let mut headers: Vec<HttpHeaderEntry> = Vec::new();
+                        let mut body: Vec<u8> = Vec::new();
+    
+                        let (status, reason) = match status {
+                            httparse::Status::Complete(_) => {
+                                body.extend_from_slice(
+                                    format!("Hey, {}", common_name.unwrap_or("anonymous".to_string())).clone().as_bytes()
+                                );
+
+                                (
+                                    200,
+                                    "OK"
+                                )
+                            },
+                            httparse::Status::Partial => {
+                                (
+                                    413,
+                                    "Content Too Large"
+                                )
+                            },
+                        };
+
+                        let body_len = body.len().to_string();
+
+                        // Default headers
+                        headers.push(
+                            HttpHeaderEntry {
+                                name: "Content-Length".to_string(),
+                                value: body_len,
+                            }
+                        );
+
+                        headers.push(
+                            HttpHeaderEntry {
+                                name: "Server".to_string(),
+                                value: "rubyshd".to_string(),
+                            }
+                        );
+
+                        // Headers
+                        stream.write_all(&b"HTTP/1.1 "[..]).await?;
+                        stream.write_all(status.to_string().as_bytes()).await?;
+                        stream.write_all(&b" "[..]).await?;
+                        stream.write_all(safe_str(reason).as_bytes()).await?;
+                        stream.write_all(&b"\r\n"[..]).await?;
+
+                        for entry in headers {
+                            stream.write_all(safe_str(&entry.name).as_bytes()).await?;
+                            stream.write_all(&b": "[..]).await?;
+                            stream.write_all(safe_str(&entry.value).as_bytes()).await?;
+                            stream.write_all(&b"\r\n"[..]).await?;    
+                        }
+
+                        stream.write_all(&b"\r\n"[..]).await?;
+
+                        // Body
+                        stream.write_all(&body).await?;
+
+                        stream.write_all(&b"\r\n"[..]).await?;
+                    }
                 }
-                _ => {
-                    // HTTP
-                    let mut headers = [httparse::EMPTY_HEADER; 16];
-                    let mut r = httparse::Request::new(&mut headers);
-                    let status  = httparse::ParserConfig::default()
-                        .parse_request(&mut r, &buf)
-                        .map_err(|e| {
-                            let msg = format!("failed to parse http request: {:?}", e);
-                            io::Error::new(io::ErrorKind::Other, msg)
-                        })?;
-                    let amt = match status {
-                        httparse::Status::Complete(amt) => amt,
-                        httparse::Status::Partial => 0,
-                    };
-        
-                    let response = format!("Hey, {}", cn.unwrap_or("anonymous".to_string()));
 
-                    // Headers
-                    stream.write_all(&b"HTTP/1.1 200 OK\r\n"[..]).await?;
-                    stream.write_all(&b"Content-Length: "[..]).await?;
-                    stream.write_all(response.len().to_string().as_bytes()).await?;
-                    stream.write_all(&b"\r\n"[..]).await?;
+                stream.shutdown().await?;
+                copy(&mut stream, &mut output).await?;
 
-                    stream.write_all(&b"\r\n"[..]).await?;
+                info!("Request from {}: OK", peer_addr);
 
-                    // Body
-                    stream.write_all(response.as_bytes()).await?;
-
-                    stream.write_all(&b"\r\n"[..]).await?;
-                }
-            }
-
-            stream.shutdown().await?;
-            copy(&mut stream, &mut output).await?;
-
-            println!("Hello: {}", peer_addr);
-        
-            Ok(()) as io::Result<()>
-        };
+                Ok(()) as io::Result<()>
+            };
 
         tokio::spawn(async move {
             if let Err(err) = fut.await {
