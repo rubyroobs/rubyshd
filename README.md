@@ -1,5 +1,7 @@
 # rubyshd
 
+(wip) rust TLS server that supports both gemini and http, with lots of love for mutual TLS auth. 
+
 ## Usage
 
 ### Generating a root CA/certificates
