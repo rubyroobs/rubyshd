@@ -1,2 +1,8 @@
-/target
+debug/
+target/
+**/*.rs.bk
+*.pdb
+
+# Certificates/keys
+*.pfx
 *.pem

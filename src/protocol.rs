@@ -216,9 +216,7 @@ impl Protocol {
                     None => DEFAULT_HOSTNAME.to_string(),
                 };
 
-                let url = match Url::parse(
-                    format!("https://{}{}", hostname, path).as_str(),
-                ) {
+                let url = match Url::parse(format!("https://{}{}", hostname, path).as_str()) {
                     Ok(url) => url,
                     Err(e) => {
                         Protocol::Http
