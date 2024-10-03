@@ -1,20 +1,18 @@
 mod protocol;
 mod request;
 mod response;
+mod router;
 mod tls;
+mod openbsd;
 
 use crate::protocol::Protocol;
-use crate::response::{Response, Status};
-use log::{debug, error, info};
-use sanitize_filename::sanitize;
-use std::path::PathBuf;
-use std::{fs, io, net, str};
+use crate::openbsd::setup_unveil;
+use router::route_request;
+use std::{io, net, str};
+use log::error;
 use tokio::io::{copy, sink, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
-
-#[cfg(target_os = "openbsd")]
-use openbsd::unveil;
 
 const PUBLIC_PATH: &str = "public/";
 const MAX_REQUEST_HEADER_SIZE: usize = 2048;
@@ -29,21 +27,7 @@ const TLS_SERVER_PRIVATE_KEY_PEM_FILENAME: &str = "localhost.pem";
 async fn main() -> io::Result<()> {
     env_logger::init();
 
-    if cfg!(target_os = "openbsd") {
-        debug!("openbsd, calling unveil");
-        unveil("/dev/urandom", "r").expect("could not unveil urandom");
-        unveil(PUBLIC_PATH, "r").expect("could not unveil public data folder");
-        unveil(TLS_CLIENT_CA_CERTIFICATE_PEM_FILENAME, "r")
-            .expect("could not unveil TLS CA certificate");
-        unveil(TLS_SERVER_CERTIFICATE_PEM_FILENAME, "r")
-            .expect("could not unveil TLS server certificate");
-        unveil(TLS_SERVER_PRIVATE_KEY_PEM_FILENAME, "r")
-            .expect("could not unveil TLS server private key");
-
-        unveil::disable();
-    } else {
-        debug!("not openbsd :(");
-    }
+    setup_unveil();
 
     let mut addr: net::SocketAddr = "[::]:443".parse().unwrap();
     addr.set_port(TLS_LISTEN_PORT);
@@ -83,54 +67,7 @@ async fn main() -> io::Result<()> {
 
             match request {
                 Ok(request) => {
-                    let response: Response;
-
-                    let buf =
-                        PathBuf::from(format!("{}/{}", PUBLIC_PATH, sanitize(request.path())));
-
-                    if buf.is_file() {
-                        // TODO: handle permission errors
-                        let resp_body = fs::read(buf);
-                        response = match resp_body {
-                            Ok(body) => {
-                                info!(
-                                    "OK [{} -> {}] [{}] [{}] {}",
-                                    peer_addr,
-                                    TLS_LISTEN_PORT,
-                                    request.protocol(),
-                                    request.client_certificate_details(),
-                                    request.path()
-                                );
-                                Response::new(Status::Success, "text/plain", &body)
-                            }
-                            Err(_) => {
-                                info!(
-                                    "Forbidden [{} -> {}] [{}] [{}] {}",
-                                    peer_addr,
-                                    TLS_LISTEN_PORT,
-                                    request.protocol(),
-                                    request.client_certificate_details(),
-                                    request.path()
-                                );
-                                Response::new(
-                                    Status::Unauthorized,
-                                    "text/plain",
-                                    "Forbidden".as_bytes(),
-                                )
-                            }
-                        }
-                    } else {
-                        info!(
-                            "Not Found [{} -> {}] [{}] [{}] {}",
-                            peer_addr,
-                            TLS_LISTEN_PORT,
-                            request.protocol(),
-                            request.client_certificate_details(),
-                            request.path()
-                        );
-                        response =
-                            Response::new(Status::NotFound, "text/plain", "Not Found".as_bytes());
-                    }
+                    let response = route_request(&request);
 
                     request
                         .protocol()
