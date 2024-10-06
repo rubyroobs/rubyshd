@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr};
 
-use crate::{files::try_load_files_with_template,request::Request, ERRDOCS_PATH};
+use crate::{files::try_load_files_with_template, request::Request, ERRDOCS_PATH};
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Status {
@@ -51,7 +51,7 @@ impl FromStr for Status {
             "rate_limited" => Ok(Status::RateLimit),
             "other_server_error" => Ok(Status::OtherServerError),
             "other_client_error" => Ok(Status::OtherClientError),
-            _ => Err(UnknownStatusError)
+            _ => Err(UnknownStatusError),
         }
     }
 }
@@ -85,7 +85,7 @@ impl Response {
     pub fn new_for_request_and_status(request: &Request, status: Status) -> Response {
         for try_ext in request.protocol().mime_file_extensions() {
             let try_path = format!("{}/{}.{}", ERRDOCS_PATH, status, try_ext);
-    
+
             match try_load_files_with_template(&try_path, &request) {
                 Ok(response) => {
                     return Response {
@@ -94,7 +94,7 @@ impl Response {
                         redirect_uri: "".to_string(),
                         body: response.body().to_vec(),
                     }
-                },
+                }
                 Err(_) => {}
             }
         }
@@ -114,10 +114,11 @@ impl Response {
                 Status::RateLimit => "Rate limited",
                 Status::OtherServerError => "Other server error",
                 Status::OtherClientError => "Other client error",
-            }.into(),
+            }
+            .into(),
         }
     }
-    
+
     pub fn status(&self) -> &Status {
         &self.status
     }

@@ -39,7 +39,7 @@ impl Protocol {
     pub fn mime_type(&self) -> String {
         match self {
             Protocol::Gemini => "text/gemini".into(),
-            Protocol::Https => "text/html; charset=utf-8".into()
+            Protocol::Https => "text/html; charset=utf-8".into(),
         }
     }
 
@@ -122,7 +122,7 @@ impl Protocol {
                     headers.push(HttpHeaderEntry {
                         name: "Location".to_string(),
                         value: response.redirect_uri().to_string(),
-                    });    
+                    });
                 }
 
                 // Headers
@@ -171,7 +171,14 @@ impl Protocol {
                     Err(e) => {
                         let _ = Protocol::Gemini
                             .write_response(
-                                Response::new_for_request_and_status(&Request::new(peer_addr, Url::parse("gemini://localhost/").unwrap(), client_certificate_details.clone()), Status::OtherClientError),
+                                Response::new_for_request_and_status(
+                                    &Request::new(
+                                        peer_addr,
+                                        Url::parse("gemini://localhost/").unwrap(),
+                                        client_certificate_details.clone(),
+                                    ),
+                                    Status::OtherClientError,
+                                ),
                                 stream,
                             )
                             .await;
@@ -187,7 +194,14 @@ impl Protocol {
                     Err(e) => {
                         let _ = Protocol::Gemini
                             .write_response(
-                                Response::new_for_request_and_status(&Request::new(peer_addr, Url::parse("gemini://localhost/").unwrap(), client_certificate_details.clone()), Status::OtherClientError),
+                                Response::new_for_request_and_status(
+                                    &Request::new(
+                                        peer_addr,
+                                        Url::parse("gemini://localhost/").unwrap(),
+                                        client_certificate_details.clone(),
+                                    ),
+                                    Status::OtherClientError,
+                                ),
                                 stream,
                             )
                             .await;
@@ -210,7 +224,14 @@ impl Protocol {
                     Err(e) => {
                         let _ = Protocol::Https
                             .write_response(
-                                Response::new_for_request_and_status(&Request::new(peer_addr, Url::parse("https://localhost/").unwrap(), client_certificate_details.clone()), Status::OtherClientError),
+                                Response::new_for_request_and_status(
+                                    &Request::new(
+                                        peer_addr,
+                                        Url::parse("https://localhost/").unwrap(),
+                                        client_certificate_details.clone(),
+                                    ),
+                                    Status::OtherClientError,
+                                ),
                                 stream,
                             )
                             .await;
@@ -223,7 +244,14 @@ impl Protocol {
                     httparse::Status::Partial => {
                         let _ = Protocol::Https
                             .write_response(
-                                Response::new_for_request_and_status(&Request::new(peer_addr, Url::parse("https://localhost/").unwrap(), client_certificate_details.clone()), Status::RequestTooLarge),
+                                Response::new_for_request_and_status(
+                                    &Request::new(
+                                        peer_addr,
+                                        Url::parse("https://localhost/").unwrap(),
+                                        client_certificate_details.clone(),
+                                    ),
+                                    Status::RequestTooLarge,
+                                ),
                                 stream,
                             )
                             .await;
@@ -249,7 +277,14 @@ impl Protocol {
                     Err(e) => {
                         let _ = Protocol::Https
                             .write_response(
-                                Response::new_for_request_and_status(&Request::new(peer_addr, Url::parse("https://localhost/").unwrap(), client_certificate_details.clone()), Status::OtherClientError),
+                                Response::new_for_request_and_status(
+                                    &Request::new(
+                                        peer_addr,
+                                        Url::parse("https://localhost/").unwrap(),
+                                        client_certificate_details.clone(),
+                                    ),
+                                    Status::OtherClientError,
+                                ),
                                 stream,
                             )
                             .await;

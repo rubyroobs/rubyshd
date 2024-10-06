@@ -1,17 +1,17 @@
+mod files;
+mod openbsd;
 mod protocol;
 mod request;
 mod response;
-mod files;
-mod templates;
 mod router;
+mod templates;
 mod tls;
-mod openbsd;
 
-use crate::protocol::Protocol;
 use crate::openbsd::setup_unveil;
+use crate::protocol::Protocol;
+use log::error;
 use router::route_request;
 use std::{io, net, str};
-use log::error;
 use tokio::io::{copy, sink, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
