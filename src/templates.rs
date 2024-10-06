@@ -26,12 +26,14 @@ struct TemplateRequestContext {
 #[derive(serde::Serialize, serde::Deserialize)]
 struct TemplateResponseContext {
     status: Option<String>,
+    media_type: Option<String>,
     redirect_uri: Option<String>,
     redirect_permanent: Option<bool>,
 }
 
 pub fn render_response_body_for_request(
     loaded_path: &str,
+    default_media_type: &str,
     request: &Request,
     response: &Response,
 ) -> Result<Response, Status> {
@@ -45,6 +47,7 @@ pub fn render_response_body_for_request(
     handlebars.register_decorator("temporary-redirect", Box::new(temporary_redirect_decorator));
     handlebars.register_decorator("permanent-redirect", Box::new(permanent_redirect_decorator));
     handlebars.register_decorator("status", Box::new(status_decorator));
+    handlebars.register_decorator("media-type", Box::new(media_type_decorator));
 
     let request_data = TemplateRequestContext {
         peer_addr: *request.peer_addr(),
@@ -69,6 +72,7 @@ pub fn render_response_body_for_request(
                     let response_context: TemplateResponseContext =
                         serde_json::from_str(resp_context_str).unwrap_or(TemplateResponseContext {
                             status: None,
+                            media_type: None,
                             redirect_uri: None,
                             redirect_permanent: None,
                         });
@@ -78,14 +82,14 @@ pub fn render_response_body_for_request(
                             Ok(status) => status,
                             Err(_) => {
                                 error!(
-                  "[{}] [{}] [{}] [{}] Handlebars error in {}: status set to unknown status code {}",
-                  request.protocol(),
-                  request.peer_addr(),
-                  request.client_certificate_details(),
-                  request.path(),
-                  loaded_path,
-                  status_str
-                );
+                                  "[{}] [{}] [{}] [{}] Handlebars error in {}: status set to unknown status code {}",
+                                  request.protocol(),
+                                  request.peer_addr(),
+                                  request.client_certificate_details(),
+                                  request.path(),
+                                  loaded_path,
+                                  status_str
+                                );
                                 Status::Success
                             }
                         },
@@ -98,14 +102,13 @@ pub fn render_response_body_for_request(
                         },
                     };
 
+                    let media_type = match response_context.media_type {
+                        Some(context_media_type) => context_media_type.to_owned(),
+                        None => default_media_type.to_owned(),
+                    };
+
                     match response_context.redirect_uri {
-                        None => Ok(Response::new(
-                            status,
-                            mime_guess::from_path(&loaded_path)
-                                .first_raw()
-                                .unwrap_or(&request.protocol().mime_type()),
-                            rendered_body.as_bytes(),
-                        )),
+                        None => Ok(Response::new(status, &media_type, rendered_body.as_bytes())),
                         Some(redirect_uri) => {
                             Ok(Response::new_with_redirect_uri(status, &redirect_uri))
                         }
@@ -168,6 +171,26 @@ fn status_decorator<'reg: 'rc, 'rc>(
         let data = new_ctx.data_mut();
         if let Some(ref mut m) = data.as_object_mut() {
             m.insert("status".to_string(), to_json(param.value().render()));
+        }
+    }
+    rc.set_context(new_ctx);
+    Ok(())
+}
+
+fn media_type_decorator<'reg: 'rc, 'rc>(
+    d: &Decorator,
+    _: &Handlebars,
+    ctx: &Context,
+    rc: &mut RenderContext,
+) -> Result<(), RenderError> {
+    let param = d
+        .param(0)
+        .ok_or(RenderErrorReason::ParamNotFoundForIndex("media-type", 0))?;
+    let mut new_ctx = ctx.clone();
+    {
+        let data = new_ctx.data_mut();
+        if let Some(ref mut m) = data.as_object_mut() {
+            m.insert("media_type".to_string(), to_json(param.value().render()));
         }
     }
     rc.set_context(new_ctx);

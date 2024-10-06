@@ -36,14 +36,14 @@ impl fmt::Display for Protocol {
 }
 
 impl Protocol {
-    pub fn mime_type(&self) -> String {
+    pub fn media_type(&self) -> String {
         match self {
             Protocol::Gemini => "text/gemini".into(),
             Protocol::Https => "text/html; charset=utf-8".into(),
         }
     }
 
-    pub fn mime_file_extensions(&self) -> Vec<String> {
+    pub fn media_type_file_extensions(&self) -> Vec<String> {
         match self {
             Protocol::Gemini => vec!["gmi".into()],
             Protocol::Https => vec!["html".into(), "htm".into()],
@@ -57,8 +57,8 @@ impl Protocol {
     ) -> Result<(), Error> {
         match self {
             Protocol::Gemini => {
-                let (status, prompt_mimetype_uri_or_error) = match response.status() {
-                    Status::Success => (20, response.mime_type()),
+                let (status, prompt_content_type_uri_or_error) = match response.status() {
+                    Status::Success => (20, response.media_type()),
                     Status::TemporaryRedirect => (30, response.redirect_uri()),
                     Status::PermanentRedirect => (31, response.redirect_uri()),
                     Status::Unauthenticated => (60, "Unauthorized"),
@@ -73,7 +73,9 @@ impl Protocol {
                 stream.write_all(status.to_string().as_bytes()).await?;
                 stream.write_all(&b" "[..]).await?;
                 stream
-                    .write_all(newline_stripped_safe_str(prompt_mimetype_uri_or_error).as_bytes())
+                    .write_all(
+                        newline_stripped_safe_str(prompt_content_type_uri_or_error).as_bytes(),
+                    )
                     .await?;
                 stream.write_all(&b"\r\n"[..]).await?;
 
@@ -109,7 +111,7 @@ impl Protocol {
                 if body_len > 0 {
                     headers.push(HttpHeaderEntry {
                         name: "Content-Type".to_string(),
-                        value: response.mime_type().to_string(),
+                        value: response.media_type().to_string(),
                     });
                 }
 

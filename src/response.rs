@@ -58,16 +58,16 @@ impl FromStr for Status {
 
 pub struct Response {
     status: Status,
-    mime_type: String,
+    media_type: String,
     redirect_uri: String,
     body: Vec<u8>,
 }
 
 impl Response {
-    pub fn new(status: Status, mime_type: &str, body: &[u8]) -> Response {
+    pub fn new(status: Status, media_type: &str, body: &[u8]) -> Response {
         Response {
             status: status,
-            mime_type: mime_type.to_string(),
+            media_type: media_type.to_string(),
             redirect_uri: "".to_string(),
             body: body.to_vec(),
         }
@@ -76,21 +76,21 @@ impl Response {
     pub fn new_with_redirect_uri(status: Status, redirect_uri: &str) -> Response {
         Response {
             status: status,
-            mime_type: "".to_string(),
+            media_type: "".to_string(),
             redirect_uri: redirect_uri.to_string(),
             body: Vec::new(),
         }
     }
 
     pub fn new_for_request_and_status(request: &Request, status: Status) -> Response {
-        for try_ext in request.protocol().mime_file_extensions() {
+        for try_ext in request.protocol().media_type_file_extensions() {
             let try_path = format!("{}/{}.{}", ERRDOCS_PATH, status, try_ext);
 
             match try_load_files_with_template(&try_path, &request) {
                 Ok(response) => {
                     return Response {
                         status: status,
-                        mime_type: response.mime_type().to_owned(),
+                        media_type: response.media_type().to_owned(),
                         redirect_uri: "".to_string(),
                         body: response.body().to_vec(),
                     }
@@ -101,7 +101,7 @@ impl Response {
 
         Response {
             status: status,
-            mime_type: "text/plain".to_string(),
+            media_type: "text/plain".to_string(),
             redirect_uri: "".to_string(),
             body: match status {
                 Status::Success => "Success",
@@ -123,8 +123,8 @@ impl Response {
         &self.status
     }
 
-    pub fn mime_type(&self) -> &str {
-        &self.mime_type
+    pub fn media_type(&self) -> &str {
+        &self.media_type
     }
 
     pub fn redirect_uri(&self) -> &str {

@@ -14,7 +14,14 @@ pub fn route_request(request: &Request) -> Response {
     let is_directory = PathBuf::from(&root_path).is_dir();
 
     if is_directory {
-        for try_ext in request.protocol().mime_file_extensions() {
+        match try_route_request_for_path(&format!("{}/index.hbs", root_path), request) {
+            Some(response) => {
+                return response;
+            }
+            None => {}
+        }
+
+        for try_ext in request.protocol().media_type_file_extensions() {
             let try_path = if root_path.ends_with("/") {
                 format!("{}/index.{}", root_path, try_ext)
             } else {
