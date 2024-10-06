@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use sanitize_filename::sanitize;
 use log::{error, info};
-use x509_parser::nom::AsBytes;
 
 use crate::files::try_load_files_with_template;
 use crate::request::Request;
@@ -54,17 +53,17 @@ pub fn route_request(request: &Request) -> Response {
 // Tries to load a file, if it exists it will return a response with the contents or the error loading/rendering them
 fn try_route_request_for_path(try_path: &String, request: &Request) -> Option<Response> {
   match try_load_files_with_template(&try_path, request) {
-    Ok(body) => {
+    Ok(response) => {
       info!(
         "[{}] [{}] [{}] [{}] {} (from file: {})",
         request.protocol(),
         request.peer_addr(),
         request.client_certificate_details(),
         request.path(),
-        Status::Success,
+        response.status(),
         try_path,
       );
-      Some(Response::new(Status::Success, mime_guess::from_path(&try_path).first_raw().unwrap_or(&request.protocol().mime_type()), body.as_bytes()))
+      Some(response)
     },
     Err(status) => match status {
       Status::NotFound => None,

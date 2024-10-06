@@ -1,8 +1,8 @@
-use std::fmt;
+use std::{fmt, str::FromStr};
 
 use crate::{files::try_load_files_with_template,request::Request, ERRDOCS_PATH};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Status {
     Success,
     TemporaryRedirect,
@@ -33,6 +33,29 @@ impl fmt::Display for Status {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct UnknownStatusError;
+
+impl FromStr for Status {
+    type Err = UnknownStatusError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "success" => Ok(Status::Success),
+            "temporary_redirect" => Ok(Status::TemporaryRedirect),
+            "permanent_redirect" => Ok(Status::PermanentRedirect),
+            "unauthenticated" => Ok(Status::Unauthenticated),
+            "unauthorized" => Ok(Status::Unauthorized),
+            "not_found" => Ok(Status::NotFound),
+            "request_too_large" => Ok(Status::RequestTooLarge),
+            "rate_limited" => Ok(Status::RateLimit),
+            "other_server_error" => Ok(Status::OtherServerError),
+            "other_client_error" => Ok(Status::OtherClientError),
+            _ => Err(UnknownStatusError)
+        }
+    }
+}
+
 pub struct Response {
     status: Status,
     mime_type: String,
@@ -50,17 +73,26 @@ impl Response {
         }
     }
 
+    pub fn new_with_redirect_uri(status: Status, redirect_uri: &str) -> Response {
+        Response {
+            status: status,
+            mime_type: "".to_string(),
+            redirect_uri: redirect_uri.to_string(),
+            body: Vec::new(),
+        }
+    }
+
     pub fn new_for_request_and_status(request: &Request, status: Status) -> Response {
         for try_ext in request.protocol().mime_file_extensions() {
             let try_path = format!("{}/{}.{}", ERRDOCS_PATH, status, try_ext);
     
             match try_load_files_with_template(&try_path, &request) {
-                Ok(body) => {
+                Ok(response) => {
                     return Response {
                         status: status,
-                        mime_type: mime_guess::from_ext(&try_ext).first_or_text_plain().essence_str().to_string(),
+                        mime_type: response.mime_type().to_owned(),
                         redirect_uri: "".to_string(),
-                        body: body,
+                        body: response.body().to_vec(),
                     }
                 },
                 Err(_) => {}

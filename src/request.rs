@@ -3,8 +3,6 @@ use crate::tls::ClientCertificateDetails;
 use std::net::SocketAddr;
 use url::Url;
 
-const DEFAULT_HOSTNAME: &str = "ruby.sh";
-
 pub struct Request {
     peer_addr: SocketAddr,
     url: Url,
@@ -43,7 +41,7 @@ impl Request {
     pub fn protocol(&self) -> Protocol {
         match self.url.scheme() {
             "gemini" => Protocol::Gemini,
-            _ => Protocol::Http,
+            _ => Protocol::Https,
         }
     }
 }

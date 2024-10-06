@@ -20,16 +20,17 @@ fn newline_stripped_safe_str(str: &str) -> &str {
     str.lines().next().unwrap_or("")
 }
 
+#[derive(PartialEq)]
 pub enum Protocol {
     Gemini,
-    Http,
+    Https,
 }
 
 impl fmt::Display for Protocol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Protocol::Gemini => write!(f, "Gemini"),
-            Protocol::Http => write!(f, "HTTP"),
+            Protocol::Https => write!(f, "HTTP"),
         }
     }
 }
@@ -38,14 +39,14 @@ impl Protocol {
     pub fn mime_type(&self) -> String {
         match self {
             Protocol::Gemini => "text/gemini".into(),
-            Protocol::Http => "text/html; charset=utf-8".into()
+            Protocol::Https => "text/html; charset=utf-8".into()
         }
     }
 
     pub fn mime_file_extensions(&self) -> Vec<String> {
         match self {
             Protocol::Gemini => vec!["gmi".into()],
-            Protocol::Http => vec!["html".into(), "htm".into()],
+            Protocol::Https => vec!["html".into(), "htm".into()],
         }
     }
 
@@ -81,7 +82,7 @@ impl Protocol {
                     stream.write_all(response.body()).await?;
                 }
             }
-            Protocol::Http => {
+            Protocol::Https => {
                 let (status, reason) = match response.status() {
                     Status::Success => (200, "OK"),
                     Status::PermanentRedirect => (301, "Moved Permanently"),
@@ -95,20 +96,22 @@ impl Protocol {
                     Status::OtherServerError => (500, "OK"),
                 };
 
-                let body_len = response.body().len().to_string();
+                let body_len = response.body().len();
 
                 let mut headers: Vec<HttpHeaderEntry> = Vec::new();
 
                 // Default headers
                 headers.push(HttpHeaderEntry {
                     name: "Content-Length".to_string(),
-                    value: body_len,
+                    value: body_len.to_string(),
                 });
 
-                headers.push(HttpHeaderEntry {
-                    name: "Content-Type".to_string(),
-                    value: response.mime_type().to_string(),
-                });
+                if body_len > 0 {
+                    headers.push(HttpHeaderEntry {
+                        name: "Content-Type".to_string(),
+                        value: response.mime_type().to_string(),
+                    });
+                }
 
                 headers.push(HttpHeaderEntry {
                     name: "Server".to_string(),
@@ -205,7 +208,7 @@ impl Protocol {
                 let status = match httparse::ParserConfig::default().parse_request(&mut r, &buf) {
                     Ok(status) => status,
                     Err(e) => {
-                        let _ = Protocol::Http
+                        let _ = Protocol::Https
                             .write_response(
                                 Response::new_for_request_and_status(&Request::new(peer_addr, Url::parse("https://localhost/").unwrap(), client_certificate_details.clone()), Status::OtherClientError),
                                 stream,
@@ -218,7 +221,7 @@ impl Protocol {
                 match status {
                     httparse::Status::Complete(_) => (),
                     httparse::Status::Partial => {
-                        let _ = Protocol::Http
+                        let _ = Protocol::Https
                             .write_response(
                                 Response::new_for_request_and_status(&Request::new(peer_addr, Url::parse("https://localhost/").unwrap(), client_certificate_details.clone()), Status::RequestTooLarge),
                                 stream,
@@ -236,7 +239,7 @@ impl Protocol {
                 {
                     Some(header) => match String::from_utf8(header.value.to_vec()) {
                         Ok(buf_str) => buf_str,
-                        Err(e) => DEFAULT_HOSTNAME.to_string(),
+                        Err(_) => DEFAULT_HOSTNAME.to_string(),
                     },
                     None => DEFAULT_HOSTNAME.to_string(),
                 };
@@ -244,7 +247,7 @@ impl Protocol {
                 let url = match Url::parse(format!("https://{}{}", hostname, path).as_str()) {
                     Ok(url) => url,
                     Err(e) => {
-                        let _ = Protocol::Http
+                        let _ = Protocol::Https
                             .write_response(
                                 Response::new_for_request_and_status(&Request::new(peer_addr, Url::parse("https://localhost/").unwrap(), client_certificate_details.clone()), Status::OtherClientError),
                                 stream,

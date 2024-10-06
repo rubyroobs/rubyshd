@@ -1,27 +1,17 @@
 use crate::request::Request;
-use crate::response::Status;
-use log::error;
+use crate::response::{Response, Status};
+use crate::templates::render_response_body_for_request;
 use std::fs;
-use std::net::SocketAddr;
 use std::path::PathBuf;
-use handlebars::Handlebars;
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct TemplateRequestData {
-  peer_addr: SocketAddr,
-  path: String,
-  common_name: String,
-}
-
-
-pub fn try_load_files_with_template(unsanitized_path: &String, request: &Request) -> Result<Vec<u8>, Status> {
+pub fn try_load_files_with_template(unsanitized_path: &String, request: &Request) -> Result<Response, Status> {
   let mut try_path = unsanitized_path.clone();
 
   if !try_path.ends_with(".hbs") {
     // Try exact match
-    match try_load_file(&try_path) {
-      Ok(body) => {
-        return Ok(body)
+    match try_load_file(&try_path, &request.protocol().mime_type()) {
+      Ok(response) => {
+        return Ok(response)
       },
       Err(status) => match status {
         Status::NotFound => {},
@@ -36,59 +26,22 @@ pub fn try_load_files_with_template(unsanitized_path: &String, request: &Request
   }
 
   // Exact match template (handlebars)
-  match try_load_file(&try_path) {
-    Ok(body) => {
-      let handlebars: Handlebars<'_> = Handlebars::new();
-
-      let request_data = TemplateRequestData{
-        peer_addr: *request.peer_addr(),
-        path: (*request.url().path()).to_string(),
-        common_name: request.client_certificate_details().common_name()
-      };
-
-      match String::from_utf8(body) {
-        Ok(template_body) => {
-          match handlebars.render_template(&template_body, &request_data) {
-            Ok(rendered_body) => Ok(Vec::from(rendered_body.as_bytes())),
-            Err(err) => {
-              error!(
-                "[{}] [{}] [{}] [{}] Handlebars error in {}: {}",
-                request.protocol(),
-                request.peer_addr(),
-                request.client_certificate_details(),
-                request.path(),
-                try_path,
-                err
-              );
-              Err(Status::OtherServerError)
-            }
-          }
-        },
-        Err(err) => {
-          error!(
-            "[{}] [{}] [{}] [{}] Unicode error reading {} (valid up to {})",
-            request.protocol(),
-            request.peer_addr(),
-            request.client_certificate_details(),
-            request.path(),
-            try_path,
-            err.utf8_error().valid_up_to()
-          );
-          Err(Status::OtherServerError)
-        }
-      }
+  match try_load_file(&try_path, &request.protocol().mime_type()) {
+    Ok(response) => match render_response_body_for_request(unsanitized_path, request, &response) {
+      Ok(rendered_response) => Ok(rendered_response),
+      Err(status) => Err(status)
     },
     Err(status) => Err(status)
   }
 }
 
-fn try_load_file(unsanitized_path: &str) -> Result<Vec<u8>, Status> {
+fn try_load_file(unsanitized_path: &str, default_mime_type: &str) -> Result<Response, Status> {
   let buf = PathBuf::from(unsanitized_path);
   if buf.is_file() {
     let resp_body: Result<Vec<u8>, std::io::Error> = fs::read(buf);
 
     return match resp_body {
-      Ok(body) => Ok(body),
+      Ok(body) => Ok(Response::new(Status::Success, mime_guess::from_path(&unsanitized_path).first_raw().unwrap_or(default_mime_type), &body)),
       Err(_) => Err(Status::Unauthorized),
     }
   }
