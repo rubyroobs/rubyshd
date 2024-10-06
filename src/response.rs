@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr};
 
-use crate::{files::try_load_files_with_template, request::Request, ERRDOCS_PATH};
+use crate::{files::try_load_files_with_template, request::Request};
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Status {
@@ -84,7 +84,12 @@ impl Response {
 
     pub fn new_for_request_and_status(request: &Request, status: Status) -> Response {
         for try_ext in request.protocol().media_type_file_extensions() {
-            let try_path = format!("{}/{}.{}", ERRDOCS_PATH, status, try_ext);
+            let try_path = format!(
+                "{}/{}.{}",
+                request.server_config().errdocs_path(),
+                status,
+                try_ext
+            );
 
             match try_load_files_with_template(&try_path, &request) {
                 Ok(response) => {

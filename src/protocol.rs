@@ -1,15 +1,15 @@
+use crate::config::Config;
 use crate::request::Request;
 use crate::response::{Response, Status};
 use crate::tls::ClientCertificateDetails;
 use std::fmt;
 use std::io::Error;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio_rustls::server::TlsStream;
 use url::Url;
-
-const DEFAULT_HOSTNAME: &str = "ruby.sh";
 
 struct HttpHeaderEntry {
     name: String,
@@ -160,6 +160,7 @@ impl Protocol {
     }
 
     pub async fn parse_req_buf(
+        server_config: Arc<Config>,
         peer_addr: SocketAddr,
         client_certificate_details: &ClientCertificateDetails,
         buf: &[u8],
@@ -175,6 +176,7 @@ impl Protocol {
                             .write_response(
                                 Response::new_for_request_and_status(
                                     &Request::new(
+                                        server_config,
                                         peer_addr,
                                         Url::parse("gemini://localhost/").unwrap(),
                                         client_certificate_details.clone(),
@@ -198,6 +200,7 @@ impl Protocol {
                             .write_response(
                                 Response::new_for_request_and_status(
                                     &Request::new(
+                                        server_config,
                                         peer_addr,
                                         Url::parse("gemini://localhost/").unwrap(),
                                         client_certificate_details.clone(),
@@ -212,6 +215,7 @@ impl Protocol {
                 };
 
                 Ok(Request::new(
+                    server_config,
                     peer_addr,
                     url,
                     client_certificate_details.clone(),
@@ -228,6 +232,7 @@ impl Protocol {
                             .write_response(
                                 Response::new_for_request_and_status(
                                     &Request::new(
+                                        server_config,
                                         peer_addr,
                                         Url::parse("https://localhost/").unwrap(),
                                         client_certificate_details.clone(),
@@ -248,6 +253,7 @@ impl Protocol {
                             .write_response(
                                 Response::new_for_request_and_status(
                                     &Request::new(
+                                        server_config,
                                         peer_addr,
                                         Url::parse("https://localhost/").unwrap(),
                                         client_certificate_details.clone(),
@@ -269,9 +275,9 @@ impl Protocol {
                 {
                     Some(header) => match String::from_utf8(header.value.to_vec()) {
                         Ok(buf_str) => buf_str,
-                        Err(_) => DEFAULT_HOSTNAME.to_string(),
+                        Err(_) => server_config.default_hostname().to_string(),
                     },
-                    None => DEFAULT_HOSTNAME.to_string(),
+                    None => server_config.default_hostname().to_string(),
                 };
 
                 let url = match Url::parse(format!("https://{}{}", hostname, path).as_str()) {
@@ -281,6 +287,7 @@ impl Protocol {
                             .write_response(
                                 Response::new_for_request_and_status(
                                     &Request::new(
+                                        server_config,
                                         peer_addr,
                                         Url::parse("https://localhost/").unwrap(),
                                         client_certificate_details.clone(),
@@ -295,6 +302,7 @@ impl Protocol {
                 };
 
                 Ok(Request::new(
+                    server_config,
                     peer_addr,
                     url,
                     client_certificate_details.clone(),

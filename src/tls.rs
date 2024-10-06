@@ -10,6 +10,8 @@ use tokio_rustls::rustls;
 use tokio_rustls::server::TlsStream;
 use x509_parser::prelude::*;
 
+use crate::config::Config;
+
 #[derive(Clone)]
 pub struct ClientCertificateDetails {
     common_name: Option<String>,
@@ -72,12 +74,8 @@ pub fn extract_client_certificate_details_from_stream(
     details.unwrap_or(ClientCertificateDetails::new_anonymous())
 }
 
-pub fn make_config(
-    client_ca_certificate_pem_filename: &str,
-    server_certificate_pem_filename: &str,
-    server_private_key_pem_filename: &str,
-) -> Arc<rustls::ServerConfig> {
-    let client_root_certs = load_certs(client_ca_certificate_pem_filename);
+pub fn make_config(config: &Config) -> Arc<rustls::ServerConfig> {
+    let client_root_certs = load_certs(config.tls_client_ca_certificate_pem_filename());
     let mut client_auth_roots = RootCertStore::empty();
     for root in client_root_certs {
         client_auth_roots.add(root).unwrap();
@@ -90,10 +88,10 @@ pub fn make_config(
     let versions = rustls::ALL_VERSIONS.to_vec();
     let suites = provider::ALL_CIPHER_SUITES.to_vec();
 
-    let certs = load_certs(server_certificate_pem_filename);
-    let privkey = load_private_key(server_private_key_pem_filename);
+    let certs = load_certs(config.tls_server_certificate_pem_filename());
+    let privkey = load_private_key(config.tls_server_private_key_pem_filename());
 
-    let mut config = rustls::ServerConfig::builder_with_provider(
+    let mut server_config = rustls::ServerConfig::builder_with_provider(
         CryptoProvider {
             cipher_suites: suites,
             ..provider::default_provider()
@@ -106,9 +104,9 @@ pub fn make_config(
     .with_single_cert(certs, privkey)
     .expect("bad certificates/private key");
 
-    config.key_log = Arc::new(rustls::KeyLogFile::new());
+    server_config.key_log = Arc::new(rustls::KeyLogFile::new());
 
-    Arc::new(config)
+    Arc::new(server_config)
 }
 
 fn load_certs(filename: &str) -> Vec<CertificateDer<'static>> {

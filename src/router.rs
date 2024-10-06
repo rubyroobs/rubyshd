@@ -6,11 +6,14 @@ use sanitize_filename::sanitize;
 use crate::files::try_load_files_with_template;
 use crate::request::Request;
 use crate::response::{Response, Status};
-use crate::PUBLIC_ROOT_PATH;
 
 pub fn route_request(request: &Request) -> Response {
     let sanitized_path = sanitize(request.path());
-    let root_path = format!("{}/{}", PUBLIC_ROOT_PATH, sanitized_path);
+    let root_path = format!(
+        "{}/{}",
+        request.server_config().public_root_path(),
+        sanitized_path
+    );
     let is_directory = PathBuf::from(&root_path).is_dir();
 
     if is_directory {
