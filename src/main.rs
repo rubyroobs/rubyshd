@@ -1,6 +1,7 @@
 mod protocol;
 mod request;
 mod response;
+mod files;
 mod router;
 mod tls;
 mod openbsd;
@@ -8,13 +9,15 @@ mod openbsd;
 use crate::protocol::Protocol;
 use crate::openbsd::setup_unveil;
 use router::route_request;
+use url::Url;
 use std::{io, net, str};
 use log::error;
 use tokio::io::{copy, sink, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 
-const PUBLIC_PATH: &str = "public/";
+const PUBLIC_ROOT_PATH: &str = "public_root/";
+const ERRDOCS_PATH: &str = "errdocs/";
 const MAX_REQUEST_HEADER_SIZE: usize = 2048;
 const TLS_LISTEN_PORT: u16 = 4443;
 const TLS_CLIENT_CA_CERTIFICATE_PEM_FILENAME: &str = "ca.cert.pem";

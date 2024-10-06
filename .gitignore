@@ -6,3 +6,9 @@ target/
 # Certificates/keys
 *.pfx
 *.pem
+
+# Default content folders
+errdocs/*
+!errdocs/.gitkeep
+public_root/*
+!public_root/.gitkeep

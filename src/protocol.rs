@@ -35,6 +35,20 @@ impl fmt::Display for Protocol {
 }
 
 impl Protocol {
+    pub fn mime_type(&self) -> String {
+        match self {
+            Protocol::Gemini => "text/gemini".into(),
+            Protocol::Http => "text/html; charset=utf-8".into()
+        }
+    }
+
+    pub fn mime_file_extensions(&self) -> Vec<String> {
+        match self {
+            Protocol::Gemini => vec!["gmi".into()],
+            Protocol::Http => vec!["html".into(), "htm".into()],
+        }
+    }
+
     pub async fn write_response(
         &self,
         response: Response,
@@ -42,39 +56,43 @@ impl Protocol {
     ) -> Result<(), Error> {
         match self {
             Protocol::Gemini => {
-                let status_code = match response.status() {
-                    Status::Success => 20,
-                    Status::TemporaryRedirect => 30,
-                    Status::PermanentRedirect => 31,
-                    Status::Unauthenticated => 60,
-                    Status::Unauthorized => 61,
-                    Status::NotFound => 51,
-                    Status::RequestTooLarge => 59,
-                    Status::RateLimit => 44,
-                    Status::OtherServerError => 40,
-                    Status::OtherClientError => 59,
+                let (status, prompt_mimetype_uri_or_error) = match response.status() {
+                    Status::Success => (20, response.mime_type()),
+                    Status::TemporaryRedirect => (30, response.redirect_uri()),
+                    Status::PermanentRedirect => (31, response.redirect_uri()),
+                    Status::Unauthenticated => (60, "Unauthorized"),
+                    Status::Unauthorized => (61, "Forbidden"),
+                    Status::NotFound => (51, "Not Found"),
+                    Status::RequestTooLarge => (59, "Payload Too Large"),
+                    Status::RateLimit => (44, "Too Many Requests"),
+                    Status::OtherServerError => (40, "OK"),
+                    Status::OtherClientError => (59, "Internal Server Error"),
                 };
 
-                stream.write_all(status_code.to_string().as_bytes()).await?;
+                stream.write_all(status.to_string().as_bytes()).await?;
                 stream.write_all(&b" "[..]).await?;
                 stream
-                    .write_all(newline_stripped_safe_str(response.mime_type()).as_bytes())
+                    .write_all(newline_stripped_safe_str(prompt_mimetype_uri_or_error).as_bytes())
                     .await?;
                 stream.write_all(&b"\r\n"[..]).await?;
-                stream.write_all(response.body()).await?;
+
+                // only write body if it's a 20
+                if status == 20 {
+                    stream.write_all(response.body()).await?;
+                }
             }
             Protocol::Http => {
                 let (status, reason) = match response.status() {
                     Status::Success => (200, "OK"),
-                    Status::TemporaryRedirect => (302, "Moved Permanently"),
-                    Status::PermanentRedirect => (301, "Found"),
-                    Status::Unauthenticated => (401, "Unauthorized"),
+                    Status::PermanentRedirect => (301, "Moved Permanently"),
+                    Status::TemporaryRedirect => (302, "Found"),
+                    Status::OtherClientError => (400, "Internal Server Error"),
+                    Status::Unauthenticated => (401, "Unauthenticated"), // this is intentionally not "Unauthorized"
                     Status::Unauthorized => (403, "Forbidden"),
                     Status::NotFound => (404, "Not Found"),
                     Status::RequestTooLarge => (413, "Payload Too Large"),
                     Status::RateLimit => (429, "Too Many Requests"),
                     Status::OtherServerError => (500, "OK"),
-                    Status::OtherClientError => (400, "Internal Server Error"),
                 };
 
                 let body_len = response.body().len().to_string();
@@ -96,6 +114,13 @@ impl Protocol {
                     name: "Server".to_string(),
                     value: "rubyshd".to_string(),
                 });
+
+                if status == 301 || status == 302 {
+                    headers.push(HttpHeaderEntry {
+                        name: "Location".to_string(),
+                        value: response.redirect_uri().to_string(),
+                    });    
+                }
 
                 // Headers
                 stream.write_all(&b"HTTP/1.1 "[..]).await?;
@@ -141,9 +166,9 @@ impl Protocol {
                 let raw_url = match std::str::from_utf8(buf) {
                     Ok(buf_str) => buf_str.lines().next().unwrap(),
                     Err(e) => {
-                        Protocol::Gemini
+                        let _ = Protocol::Gemini
                             .write_response(
-                                Response::new_for_status(Status::OtherClientError),
+                                Response::new_for_request_and_status(&Request::new(peer_addr, Url::parse("gemini://localhost/").unwrap(), client_certificate_details.clone()), Status::OtherClientError),
                                 stream,
                             )
                             .await;
@@ -157,9 +182,9 @@ impl Protocol {
                 let url = match Url::parse(raw_url) {
                     Ok(url) => url,
                     Err(e) => {
-                        Protocol::Gemini
+                        let _ = Protocol::Gemini
                             .write_response(
-                                Response::new_for_status(Status::OtherClientError),
+                                Response::new_for_request_and_status(&Request::new(peer_addr, Url::parse("gemini://localhost/").unwrap(), client_certificate_details.clone()), Status::OtherClientError),
                                 stream,
                             )
                             .await;
@@ -180,9 +205,9 @@ impl Protocol {
                 let status = match httparse::ParserConfig::default().parse_request(&mut r, &buf) {
                     Ok(status) => status,
                     Err(e) => {
-                        Protocol::Http
+                        let _ = Protocol::Http
                             .write_response(
-                                Response::new_for_status(Status::OtherClientError),
+                                Response::new_for_request_and_status(&Request::new(peer_addr, Url::parse("https://localhost/").unwrap(), client_certificate_details.clone()), Status::OtherClientError),
                                 stream,
                             )
                             .await;
@@ -193,9 +218,9 @@ impl Protocol {
                 match status {
                     httparse::Status::Complete(_) => (),
                     httparse::Status::Partial => {
-                        Protocol::Http
+                        let _ = Protocol::Http
                             .write_response(
-                                Response::new_for_status(Status::RequestTooLarge),
+                                Response::new_for_request_and_status(&Request::new(peer_addr, Url::parse("https://localhost/").unwrap(), client_certificate_details.clone()), Status::RequestTooLarge),
                                 stream,
                             )
                             .await;
@@ -219,9 +244,9 @@ impl Protocol {
                 let url = match Url::parse(format!("https://{}{}", hostname, path).as_str()) {
                     Ok(url) => url,
                     Err(e) => {
-                        Protocol::Http
+                        let _ = Protocol::Http
                             .write_response(
-                                Response::new_for_status(Status::OtherClientError),
+                                Response::new_for_request_and_status(&Request::new(peer_addr, Url::parse("https://localhost/").unwrap(), client_certificate_details.clone()), Status::OtherClientError),
                                 stream,
                             )
                             .await;
