@@ -48,14 +48,17 @@ fn try_load_file(path: &str, request: &Request) -> Result<Response, Status> {
         Err(_) => return Err(Status::NotFound),
     };
 
-    if !path_buf.starts_with(format!("{}/", request.server_config().public_root_path())) {
+    if !path_buf.starts_with(format!("{}/", request.server_config().public_root_path()))
+        && !path_buf.starts_with(format!("{}/", request.server_config().errdocs_path()))
+    {
         error!(
-            "[{}] [{}] [{}] [{}] {}: canonicalized path not in public root dir - path traversal attempt?",
+            "[{}] [{}] [{}] [{}] {}: canonicalized path not in public root/errdocs dir - path traversal attempt? (canonicalized path: {})",
             request.protocol(),
             request.peer_addr(),
             request.client_certificate_details(),
             request.path(),
             Status::OtherClientError,
+            path
         );
         return Err(Status::OtherClientError);
     }
