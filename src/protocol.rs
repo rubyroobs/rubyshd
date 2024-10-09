@@ -11,6 +11,8 @@ use tokio::net::TcpStream;
 use tokio_rustls::server::TlsStream;
 use url::Url;
 
+const CACHEABLE_MAX_AGE_SECONDS: u16 = 14_400;
+
 struct HttpHeaderEntry {
     name: String,
     value: String,
@@ -112,6 +114,16 @@ impl Protocol {
                     headers.push(HttpHeaderEntry {
                         name: "Content-Type".to_string(),
                         value: response.media_type().to_string(),
+                    });
+
+                    let cache_max_age = match response.cacheable() {
+                        true => CACHEABLE_MAX_AGE_SECONDS,
+                        false => 0,
+                    };
+
+                    headers.push(HttpHeaderEntry {
+                        name: "Cache-Control".to_string(),
+                        value: format!("public, max-age={}, must-revalidate", cache_max_age),
                     });
                 }
 

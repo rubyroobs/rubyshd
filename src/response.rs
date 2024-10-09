@@ -61,15 +61,17 @@ pub struct Response {
     media_type: String,
     redirect_uri: String,
     body: Vec<u8>,
+    cacheable: bool,
 }
 
 impl Response {
-    pub fn new(status: Status, media_type: &str, body: &[u8]) -> Response {
+    pub fn new(status: Status, media_type: &str, body: &[u8], cacheable: bool) -> Response {
         Response {
             status: status,
             media_type: media_type.to_string(),
             redirect_uri: "".to_string(),
             body: body.to_vec(),
+            cacheable: cacheable,
         }
     }
 
@@ -79,6 +81,7 @@ impl Response {
             media_type: "".to_string(),
             redirect_uri: redirect_uri.to_string(),
             body: Vec::new(),
+            cacheable: false,
         }
     }
 
@@ -98,6 +101,7 @@ impl Response {
                         media_type: response.media_type().to_owned(),
                         redirect_uri: "".to_string(),
                         body: response.body().to_vec(),
+                        cacheable: false,
                     }
                 }
                 Err(_) => {}
@@ -121,6 +125,7 @@ impl Response {
                 Status::OtherClientError => "Other client error",
             }
             .into(),
+            cacheable: false,
         }
     }
 
@@ -138,5 +143,9 @@ impl Response {
 
     pub fn body(&self) -> &[u8] {
         &self.body
+    }
+
+    pub fn cacheable(&self) -> bool {
+        self.cacheable
     }
 }

@@ -1,11 +1,12 @@
 use log::error;
+use rand::seq::{IteratorRandom as _, SliceRandom};
 use std::env;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
 use handlebars::{
-    to_json, Context, Decorator, Handlebars, Helper, HelperResult, JsonRender, Output,
-    RenderContext, RenderError, RenderErrorReason,
+    to_json, Context, Decorator, Handlebars, Helper, HelperDef, HelperResult, JsonRender, Output,
+    RenderContext, RenderError, RenderErrorReason, ScopedJson,
 };
 
 use crate::protocol::Protocol;
@@ -39,6 +40,7 @@ pub fn initialize_handlebars(handlebars: &mut Handlebars) {
         "private-context-serialize",
         Box::new(serialize_context_helper),
     );
+    handlebars.register_helper("pick-random", Box::new(pick_random_helper));
     handlebars.register_decorator("temporary-redirect", Box::new(temporary_redirect_decorator));
     handlebars.register_decorator("permanent-redirect", Box::new(permanent_redirect_decorator));
     handlebars.register_decorator("status", Box::new(status_decorator));
@@ -117,7 +119,12 @@ pub fn render_response_body_for_request(
                     };
 
                     match response_context.redirect_uri {
-                        None => Ok(Response::new(status, &media_type, rendered_body.as_bytes())),
+                        None => Ok(Response::new(
+                            status,
+                            &media_type,
+                            rendered_body.as_bytes(),
+                            false,
+                        )),
                         Some(redirect_uri) => {
                             Ok(Response::new_with_redirect_uri(status, &redirect_uri))
                         }
@@ -164,6 +171,38 @@ fn serialize_context_helper(
         None => {}
     }
     Ok(())
+}
+
+#[allow(non_camel_case_types)]
+pub struct pick_random_helper;
+
+impl HelperDef for pick_random_helper {
+    fn call_inner<'reg: 'rc, 'rc>(
+        &self,
+        h: &Helper<'rc>,
+        _: &'reg Handlebars,
+        _: &'rc Context,
+        _: &mut RenderContext<'reg, 'rc>,
+    ) -> Result<ScopedJson<'reg>, RenderError> {
+        let param = h
+            .param(0)
+            .ok_or(RenderErrorReason::ParamNotFoundForIndex("pick-random", 0))?;
+
+        if let Some(array) = param.value().as_array() {
+            match array.choose(&mut rand::thread_rng()) {
+                Some(value) => Ok(ScopedJson::Derived(value.clone())),
+                None => Ok(ScopedJson::Derived(serde_json::Value::Null)),
+            }
+        } else if let Some(object) = param.value().as_object() {
+            match object.values().choose(&mut rand::thread_rng()) {
+                Some(value) => Ok(ScopedJson::Derived(value.clone())),
+                None => Ok(ScopedJson::Derived(serde_json::Value::Null)),
+            }
+        } else {
+            // TODO: raise an invalid param error here?
+            Ok(ScopedJson::Derived(serde_json::Value::Null))
+        }
+    }
 }
 
 fn status_decorator<'reg: 'rc, 'rc>(

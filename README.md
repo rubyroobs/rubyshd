@@ -69,6 +69,8 @@ The below flow is provided as a reference for how `rubyshd` routes requests, as 
     - Try `{PUBLIC_ROOT_PATH}/path.gmi`
     - Try `{PUBLIC_ROOT_PATH}/path.gmi.hbs`
 
+All HTTPS responses for static files (i.e. everything except rendered templates/redirects/errors) are marked as cacheable with the `max-age` value set to `CACHEABLE_MAX_AGE_SECONDS`.
+
 ### Templates
 
 The [`handlebars-rust`](https://github.com/sunng87/handlebars-rust) project is used for templating and the original [handlebarsjs.com](https://handlebarsjs.com/) documentation is a sufficient reference. However, these `rubyshd`-specific decorators/helpers/quirks are useful to know. Unless otherwise stated, this applies to requests from both the HTTPS and Gemini protocols.
@@ -79,6 +81,7 @@ The [`handlebars-rust`](https://github.com/sunng87/handlebars-rust) project is u
 * The `*status` decorator can be used to set the status code used for the response. The value in the last call to the decorator will be the one used. The parameter must be one of the `Status` slugs in `src/response.rs`. For example, `{{*status "unauthenticated"}}` and `{{*status "other_server_error"}}` are valid calls.
 * The `*media-type` decorator can be used to set the response media type (i.e. `Content-Type` in HTTPS responses). For example, `{{*media-type "text/csv"}}` and `{{*media-type "application/json"}}` are valid calls. 
 * The `*temporary-redirect` and `*permanent-redirect` decorators can be used to set temporary and permanent redirects respectively. For example, `{{*temporary-redirect "https://google.com/"}}` will return a temporary redirect to `https://google.com`. For consistency with Gemini, no response body will be returned with HTTPS responses when a redirect is made regardless of it's position in the template (templates will always render in full unless an error occurs).
+* The `pick-random` helper takes an array and chooses a random value from it. For example, if `random_photos.json` contains an array of random photo URLs, `pick-random data.random_photos` will return one of the values from the array.
 * The following request-specific properties are also available:
   * `peer_addr` - client IP address
   * `path` - the requested path

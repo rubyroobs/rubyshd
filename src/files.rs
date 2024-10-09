@@ -76,6 +76,7 @@ fn try_load_file(path: &str, request: &Request) -> Result<Response, Status> {
                     .first_raw()
                     .unwrap_or(&request.protocol().media_type()),
                 &body,
+                true,
             )),
             Err(_) => Err(Status::Unauthorized),
         };
