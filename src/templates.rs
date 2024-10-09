@@ -41,6 +41,7 @@ pub fn initialize_handlebars(handlebars: &mut Handlebars) {
         Box::new(serialize_context_helper),
     );
     handlebars.register_helper("pick-random", Box::new(pick_random_helper));
+    handlebars.register_decorator("set", Box::new(set_decorator));
     handlebars.register_decorator("temporary-redirect", Box::new(temporary_redirect_decorator));
     handlebars.register_decorator("permanent-redirect", Box::new(permanent_redirect_decorator));
     handlebars.register_decorator("status", Box::new(status_decorator));
@@ -283,6 +284,35 @@ fn permanent_redirect_decorator<'reg: 'rc, 'rc>(
         if let Some(ref mut m) = data.as_object_mut() {
             m.insert("redirect_permanent".to_string(), to_json(true));
             m.insert("redirect_uri".to_string(), to_json(param.value().render()));
+        }
+    }
+    rc.set_context(new_ctx);
+    Ok(())
+}
+
+fn set_decorator<'reg: 'rc, 'rc>(
+    d: &Decorator,
+    _: &Handlebars,
+    ctx: &Context,
+    rc: &mut RenderContext,
+) -> Result<(), RenderError> {
+    let key = match d.param(0) {
+        Some(param) => match param.value().as_str() {
+            Some(key_str) => Ok(key_str),
+            None => Err(RenderErrorReason::ParamNotFoundForIndex("set", 0)),
+        },
+        None => Err(RenderErrorReason::ParamNotFoundForIndex("set", 0)),
+    }?;
+
+    let value = d
+        .param(1)
+        .ok_or(RenderErrorReason::ParamNotFoundForIndex("set", 1))?;
+
+    let mut new_ctx = ctx.clone();
+    {
+        let data = new_ctx.data_mut();
+        if let Some(ref mut m) = data.as_object_mut() {
+            m.insert(key.to_string(), to_json(value.value().render()));
         }
     }
     rc.set_context(new_ctx);
