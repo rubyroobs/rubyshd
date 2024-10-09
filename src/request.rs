@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::context::ServerContext;
 use crate::protocol::Protocol;
 use crate::tls::ClientCertificateDetails;
 use std::net::SocketAddr;
@@ -6,7 +6,7 @@ use std::sync::Arc;
 use url::Url;
 
 pub struct Request {
-    server_config: Arc<Config>,
+    server_context: Arc<ServerContext>,
     peer_addr: SocketAddr,
     url: Url,
     client_certificate_details: ClientCertificateDetails,
@@ -14,21 +14,21 @@ pub struct Request {
 
 impl Request {
     pub fn new(
-        server_config: Arc<Config>,
+        server_context: Arc<ServerContext>,
         peer_addr: SocketAddr,
         url: Url,
         client_certificate_details: ClientCertificateDetails,
     ) -> Request {
         Request {
-            server_config: server_config,
+            server_context: server_context,
             peer_addr: peer_addr,
             url: url,
             client_certificate_details: client_certificate_details,
         }
     }
 
-    pub fn server_config(&self) -> &Arc<Config> {
-        &self.server_config
+    pub fn server_context(&self) -> &Arc<ServerContext> {
+        &self.server_context
     }
 
     pub fn peer_addr(&self) -> &SocketAddr {

@@ -3,7 +3,6 @@ use log::error;
 use crate::request::Request;
 use crate::response::{Response, Status};
 use crate::templates::render_response_body_for_request;
-use std::fs;
 use std::path::PathBuf;
 
 pub fn try_load_files_with_template(path: &str, request: &Request) -> Result<Response, Status> {
@@ -48,9 +47,13 @@ fn try_load_file(path: &str, request: &Request) -> Result<Response, Status> {
         Err(_) => return Err(Status::NotFound),
     };
 
-    if !path_buf.starts_with(format!("{}/", request.server_config().public_root_path()))
-        && !path_buf.starts_with(format!("{}/", request.server_config().errdocs_path()))
-    {
+    if !path_buf.starts_with(format!(
+        "{}/",
+        request.server_context().config().public_root_path()
+    )) && !path_buf.starts_with(format!(
+        "{}/",
+        request.server_context().config().errdocs_path()
+    )) {
         error!(
             "[{}] [{}] [{}] [{}] {}: canonicalized path not in public root/errdocs dir - path traversal attempt? (canonicalized path: {})",
             request.protocol(),
@@ -64,7 +67,7 @@ fn try_load_file(path: &str, request: &Request) -> Result<Response, Status> {
     }
 
     if path_buf.is_file() {
-        let resp_body: Result<Vec<u8>, std::io::Error> = fs::read(path_buf);
+        let resp_body: Result<Vec<u8>, std::io::Error> = request.server_context().fs_read(path_buf);
 
         return match resp_body {
             Ok(body) => Ok(Response::new(

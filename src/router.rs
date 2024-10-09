@@ -9,7 +9,7 @@ use crate::response::{Response, Status};
 pub fn route_request(request: &Request) -> Response {
     let os_path_str = format!(
         "{}{}",
-        request.server_config().public_root_path(),
+        request.server_context().config().public_root_path(),
         request.path()
     );
     let path_buf = PathBuf::from(&os_path_str);

@@ -86,7 +86,7 @@ impl Response {
         for try_ext in request.protocol().media_type_file_extensions() {
             let try_path = format!(
                 "{}/{}.{}",
-                request.server_config().errdocs_path(),
+                request.server_context().config().errdocs_path(),
                 status,
                 try_ext
             );

@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::context::ServerContext;
 use crate::request::Request;
 use crate::response::{Response, Status};
 use crate::tls::ClientCertificateDetails;
@@ -160,7 +160,7 @@ impl Protocol {
     }
 
     pub async fn parse_req_buf(
-        server_config: Arc<Config>,
+        server_context: Arc<ServerContext>,
         peer_addr: SocketAddr,
         client_certificate_details: &ClientCertificateDetails,
         buf: &[u8],
@@ -176,7 +176,7 @@ impl Protocol {
                             .write_response(
                                 Response::new_for_request_and_status(
                                     &Request::new(
-                                        server_config,
+                                        server_context,
                                         peer_addr,
                                         Url::parse("gemini://localhost/").unwrap(),
                                         client_certificate_details.clone(),
@@ -200,7 +200,7 @@ impl Protocol {
                             .write_response(
                                 Response::new_for_request_and_status(
                                     &Request::new(
-                                        server_config,
+                                        server_context,
                                         peer_addr,
                                         Url::parse("gemini://localhost/").unwrap(),
                                         client_certificate_details.clone(),
@@ -215,7 +215,7 @@ impl Protocol {
                 };
 
                 Ok(Request::new(
-                    server_config,
+                    server_context,
                     peer_addr,
                     url,
                     client_certificate_details.clone(),
@@ -232,7 +232,7 @@ impl Protocol {
                             .write_response(
                                 Response::new_for_request_and_status(
                                     &Request::new(
-                                        server_config,
+                                        server_context,
                                         peer_addr,
                                         Url::parse("https://localhost/").unwrap(),
                                         client_certificate_details.clone(),
@@ -253,7 +253,7 @@ impl Protocol {
                             .write_response(
                                 Response::new_for_request_and_status(
                                     &Request::new(
-                                        server_config,
+                                        server_context,
                                         peer_addr,
                                         Url::parse("https://localhost/").unwrap(),
                                         client_certificate_details.clone(),
@@ -275,9 +275,9 @@ impl Protocol {
                 {
                     Some(header) => match String::from_utf8(header.value.to_vec()) {
                         Ok(buf_str) => buf_str,
-                        Err(_) => server_config.default_hostname().to_string(),
+                        Err(_) => server_context.config().default_hostname().to_string(),
                     },
-                    None => server_config.default_hostname().to_string(),
+                    None => server_context.config().default_hostname().to_string(),
                 };
 
                 let url = match Url::parse(format!("https://{}{}", hostname, path).as_str()) {
@@ -287,7 +287,7 @@ impl Protocol {
                             .write_response(
                                 Response::new_for_request_and_status(
                                     &Request::new(
-                                        server_config,
+                                        server_context,
                                         peer_addr,
                                         Url::parse("https://localhost/").unwrap(),
                                         client_certificate_details.clone(),
@@ -302,7 +302,7 @@ impl Protocol {
                 };
 
                 Ok(Request::new(
-                    server_config,
+                    server_context,
                     peer_addr,
                     url,
                     client_certificate_details.clone(),

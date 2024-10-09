@@ -1,4 +1,5 @@
 mod config;
+mod context;
 mod files;
 mod protocol;
 mod request;
@@ -9,6 +10,7 @@ mod tls;
 
 use crate::protocol::Protocol;
 use config::Config;
+use context::ServerContext;
 use log::{debug, error};
 use router::route_request;
 use std::sync::Arc;
@@ -45,15 +47,18 @@ pub fn setup_unveil() {
 async fn main() -> io::Result<()> {
     env_logger::init();
 
-    let server_config = Arc::new(Config::new_from_env());
+    let server_context = Arc::new(ServerContext::new_with_config(Config::new_from_env()));
 
-    debug!("Starting server with config: {:#?}", server_config);
+    debug!(
+        "Starting server with config: {:#?}",
+        server_context.config()
+    );
     setup_unveil();
 
     let mut addr: net::SocketAddr = "[::]:443".parse().unwrap();
-    addr.set_port(server_config.tls_listen_port());
+    addr.set_port(server_context.config().tls_listen_port());
 
-    let tls_config = tls::make_config(&server_config);
+    let tls_config = tls::make_config(&server_context.config());
 
     let acceptor = TlsAcceptor::from(tls_config);
 
@@ -62,8 +67,8 @@ async fn main() -> io::Result<()> {
     loop {
         let (stream, peer_addr) = listener.accept().await?;
         let acceptor = acceptor.clone();
-        let server_config = server_config.clone();
-        let tls_listen_port = server_config.tls_listen_port();
+        let server_context = server_context.clone();
+        let tls_listen_port = server_context.config().tls_listen_port();
 
         let fut = async move {
             let mut stream = acceptor.accept(stream).await?;
@@ -71,8 +76,9 @@ async fn main() -> io::Result<()> {
             let client_certificate_details =
                 tls::extract_client_certificate_details_from_stream(&stream);
 
-            let mut buf = vec![0u8; server_config.max_request_header_size()];
-            if stream.read(&mut buf[..]).await? == server_config.max_request_header_size() {
+            let mut buf = vec![0u8; server_context.config().max_request_header_size()];
+            if stream.read(&mut buf[..]).await? == server_context.config().max_request_header_size()
+            {
                 error!("Request from {}: request bigger than max size", peer_addr);
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
@@ -81,7 +87,7 @@ async fn main() -> io::Result<()> {
             }
 
             let request = Protocol::parse_req_buf(
-                server_config,
+                server_context,
                 peer_addr,
                 &client_certificate_details,
                 &buf,
