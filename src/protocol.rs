@@ -235,7 +235,7 @@ impl Protocol {
             }
             _ => {
                 // HTTP
-                let mut headers = [httparse::EMPTY_HEADER; 16];
+                let mut headers = [httparse::EMPTY_HEADER; 32];
                 let mut r = httparse::Request::new(&mut headers);
                 let status = match httparse::ParserConfig::default().parse_request(&mut r, &buf) {
                     Ok(status) => status,

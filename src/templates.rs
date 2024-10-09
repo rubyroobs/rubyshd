@@ -41,6 +41,10 @@ pub fn initialize_handlebars(handlebars: &mut Handlebars) {
         Box::new(serialize_context_helper),
     );
     handlebars.register_helper("pick-random", Box::new(pick_random_helper));
+    handlebars.register_helper(
+        "partial-for-protocol",
+        Box::new(partial_for_protocol_helper),
+    );
     handlebars.register_decorator("set", Box::new(set_decorator));
     handlebars.register_decorator("temporary-redirect", Box::new(temporary_redirect_decorator));
     handlebars.register_decorator("permanent-redirect", Box::new(permanent_redirect_decorator));
@@ -206,6 +210,47 @@ impl HelperDef for pick_random_helper {
     }
 }
 
+#[allow(non_camel_case_types)]
+pub struct partial_for_protocol_helper;
+
+impl HelperDef for partial_for_protocol_helper {
+    fn call_inner<'reg: 'rc, 'rc>(
+        &self,
+        h: &Helper<'rc>,
+        _: &'reg Handlebars,
+        rc: &'rc Context,
+        _: &mut RenderContext<'reg, 'rc>,
+    ) -> Result<ScopedJson<'reg>, RenderError> {
+        let param = h.param(0).ok_or(RenderErrorReason::ParamNotFoundForIndex(
+            "partial-for-protocol",
+            0,
+        ))?;
+
+        match rc
+            .data()
+            .as_object()
+            .unwrap()
+            .get("protocol")
+            .unwrap()
+            .as_str()
+            .unwrap()
+        {
+            "Gemini" => Ok(ScopedJson::Derived(serde_json::Value::String(format!(
+                "{}.gmi",
+                param.value().render()
+            )))),
+            "HTTPS" => Ok(ScopedJson::Derived(serde_json::Value::String(format!(
+                "{}.html",
+                param.value().render()
+            )))),
+            _ => Ok(ScopedJson::Derived(serde_json::Value::String(format!(
+                "{}",
+                param.value().render()
+            )))),
+        }
+    }
+}
+
 fn status_decorator<'reg: 'rc, 'rc>(
     d: &Decorator,
     _: &Handlebars,
@@ -215,7 +260,11 @@ fn status_decorator<'reg: 'rc, 'rc>(
     let param = d
         .param(0)
         .ok_or(RenderErrorReason::ParamNotFoundForIndex("status", 0))?;
-    let mut new_ctx = ctx.clone();
+    let mut new_ctx = match rc.context() {
+        Some(rc_ctx) => rc_ctx.as_ref().clone(),
+        None => ctx.clone(),
+    };
+
     {
         let data = new_ctx.data_mut();
         if let Some(ref mut m) = data.as_object_mut() {
@@ -235,7 +284,12 @@ fn media_type_decorator<'reg: 'rc, 'rc>(
     let param = d
         .param(0)
         .ok_or(RenderErrorReason::ParamNotFoundForIndex("media-type", 0))?;
-    let mut new_ctx = ctx.clone();
+
+    let mut new_ctx = match rc.context() {
+        Some(rc_ctx) => rc_ctx.as_ref().clone(),
+        None => ctx.clone(),
+    };
+
     {
         let data = new_ctx.data_mut();
         if let Some(ref mut m) = data.as_object_mut() {
@@ -256,7 +310,10 @@ fn temporary_redirect_decorator<'reg: 'rc, 'rc>(
         "temporary-redirect",
         0,
     ))?;
-    let mut new_ctx = ctx.clone();
+    let mut new_ctx = match rc.context() {
+        Some(rc_ctx) => rc_ctx.as_ref().clone(),
+        None => ctx.clone(),
+    };
     {
         let data = new_ctx.data_mut();
         if let Some(ref mut m) = data.as_object_mut() {
@@ -278,7 +335,11 @@ fn permanent_redirect_decorator<'reg: 'rc, 'rc>(
         "permanent-redirect",
         0,
     ))?;
-    let mut new_ctx = ctx.clone();
+    let mut new_ctx = match rc.context() {
+        Some(rc_ctx) => rc_ctx.as_ref().clone(),
+        None => ctx.clone(),
+    };
+
     {
         let data = new_ctx.data_mut();
         if let Some(ref mut m) = data.as_object_mut() {
@@ -308,7 +369,11 @@ fn set_decorator<'reg: 'rc, 'rc>(
         .param(1)
         .ok_or(RenderErrorReason::ParamNotFoundForIndex("set", 1))?;
 
-    let mut new_ctx = ctx.clone();
+    let mut new_ctx = match rc.context() {
+        Some(rc_ctx) => rc_ctx.as_ref().clone(),
+        None => ctx.clone(),
+    };
+
     {
         let data = new_ctx.data_mut();
         if let Some(ref mut m) = data.as_object_mut() {

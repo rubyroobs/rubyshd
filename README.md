@@ -83,6 +83,7 @@ The [`handlebars-rust`](https://github.com/sunng87/handlebars-rust) project is u
 * The `*media-type` decorator can be used to set the response media type (i.e. `Content-Type` in HTTPS responses). For example, `{{*media-type "text/csv"}}` and `{{*media-type "application/json"}}` are valid calls. 
 * The `*temporary-redirect` and `*permanent-redirect` decorators can be used to set temporary and permanent redirects respectively. For example, `{{*temporary-redirect "https://google.com/"}}` will return a temporary redirect to `https://google.com`. For consistency with Gemini, no response body will be returned with HTTPS responses when a redirect is made regardless of it's position in the template (templates will always render in full unless an error occurs).
 * The `pick-random` helper takes an array and chooses a random value from it. For example, if `random_photos.json` contains an array of random photo URLs, `pick-random data.random_photos` will return one of the values from the array.
+* The `partial-for-protocol` helper takes a name and returns the protocol-dependent partial name. For example, `{{partial-for-protocol "header"}}` will return `header.gmi` on Gemini protocol requests.
 * The following request-specific properties are also available:
   * `peer_addr` - client IP address
   * `path` - the requested path
