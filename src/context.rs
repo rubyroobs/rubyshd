@@ -1,8 +1,9 @@
 use std::{ffi::OsString, fs, path::PathBuf, sync::Mutex};
 
-use crate::config::Config;
+use crate::{config::Config, templates::initialize_handlebars};
 use cached::{Cached as _, TimedSizedCache};
 use glob::glob;
+use handlebars::Handlebars;
 use log::debug;
 use serde_json::json;
 
@@ -15,6 +16,7 @@ const MAX_DATA_CACHE_TTL_SECONDS: u64 = 10;
 #[derive(Debug)]
 pub struct ServerContext {
     config: Config,
+    handlebars: Handlebars<'static>,
     fs_cache: Mutex<TimedSizedCache<OsString, Vec<u8>>>,
     data_cache: Mutex<TimedSizedCache<OsString, serde_json::Value>>,
 }
@@ -28,8 +30,12 @@ pub enum DataReadErr {
 
 impl ServerContext {
     pub fn new_with_config(config: Config) -> ServerContext {
+        let mut handlebars = Handlebars::new();
+        initialize_handlebars(&mut handlebars);
+
         ServerContext {
             config: config,
+            handlebars: handlebars,
             fs_cache: Mutex::new(TimedSizedCache::with_size_and_lifespan(
                 MAX_FS_CACHE_ENTRIES,
                 MAX_FS_CACHE_TTL_SECONDS,
@@ -43,6 +49,10 @@ impl ServerContext {
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    pub fn handlebars(&self) -> &Handlebars {
+        &self.handlebars
     }
 
     pub fn fs_read(&self, path_buf: PathBuf) -> Result<Vec<u8>, std::io::Error> {

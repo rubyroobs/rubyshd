@@ -32,15 +32,7 @@ struct TemplateResponseContext {
     redirect_permanent: Option<bool>,
 }
 
-pub fn render_response_body_for_request(
-    loaded_path: &str,
-    default_media_type: &str,
-    request: &Request,
-    response: &Response,
-) -> Result<Response, Status> {
-    let body = response.body().to_vec();
-    let mut handlebars: Handlebars<'_> = Handlebars::new();
-
+pub fn initialize_handlebars(handlebars: &mut Handlebars) {
     handlebars.register_helper(
         "private-context-serialize",
         Box::new(serialize_context_helper),
@@ -49,6 +41,15 @@ pub fn render_response_body_for_request(
     handlebars.register_decorator("permanent-redirect", Box::new(permanent_redirect_decorator));
     handlebars.register_decorator("status", Box::new(status_decorator));
     handlebars.register_decorator("media-type", Box::new(media_type_decorator));
+}
+
+pub fn render_response_body_for_request(
+    loaded_path: &str,
+    default_media_type: &str,
+    request: &Request,
+    response: &Response,
+) -> Result<Response, Status> {
+    let body = response.body().to_vec();
 
     let request_data = TemplateRequestContext {
         data: request.server_context().get_data(),
@@ -65,7 +66,11 @@ pub fn render_response_body_for_request(
     match String::from_utf8(body) {
         Ok(mut template_body) => {
             template_body.push_str("\n{{private-context-serialize}}");
-            match handlebars.render_template(&template_body, &request_data) {
+            match request
+                .server_context()
+                .handlebars()
+                .render_template(&template_body, &request_data)
+            {
                 Ok(raw_rendered_body) => {
                     let (rendered_body, resp_context_str) = raw_rendered_body
                         .rsplit_once("\n")
