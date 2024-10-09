@@ -27,6 +27,7 @@ pub fn setup_unveil(server_config: Arc<Config>) {
     debug!("openbsd, calling unveil");
     unveil("/dev/urandom", "r").expect("could not unveil urandom");
     unveil(server_config.public_root_path(), "r").expect("could not unveil public docs folder");
+    unveil(server_config.partials_path(), "r").expect("could not unveil template partials folder");
     unveil(server_config.errdocs_path(), "r").expect("could not unveil error docs folder");
     unveil(server_config.data_path(), "r").expect("could not unveil data folder");
     unveil(server_config.tls_client_ca_certificate_pem_filename(), "r")
