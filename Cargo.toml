@@ -8,8 +8,10 @@ edition = "2021"
 [dependencies]
 async-std = { version = "1.12.0", features = ["attributes"], optional = true }
 bytes = "1.6.0"
+cached = "0.53.1"
 caches = "0.2" 
 env_logger = "0.10" # 0.11 requires 1.71 MSRV even as a dev-dep (due to manifest features)
+glob = "0.3.1"
 handlebars = "6.1.0"
 httparse = "1.8.0"
 log = { version = "0.4.4" }

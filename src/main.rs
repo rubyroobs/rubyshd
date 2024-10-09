@@ -26,8 +26,9 @@ use openbsd::unveil;
 pub fn setup_unveil(server_config: Arc<Config>) {
     debug!("openbsd, calling unveil");
     unveil("/dev/urandom", "r").expect("could not unveil urandom");
-    unveil(server_config.public_root_path(), "r").expect("could not unveil public data folder");
-    unveil(server_config.errdocs_path(), "r").expect("could not unveil errors data folder");
+    unveil(server_config.public_root_path(), "r").expect("could not unveil public docs folder");
+    unveil(server_config.errdocs_path(), "r").expect("could not unveil error docs folder");
+    unveil(server_config.data_path(), "r").expect("could not unveil data folder");
     unveil(server_config.tls_client_ca_certificate_pem_filename(), "r")
         .expect("could not unveil TLS CA certificate");
     unveil(server_config.tls_server_certificate_pem_filename(), "r")

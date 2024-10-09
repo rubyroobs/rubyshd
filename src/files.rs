@@ -67,7 +67,7 @@ fn try_load_file(path: &str, request: &Request) -> Result<Response, Status> {
     }
 
     if path_buf.is_file() {
-        let resp_body: Result<Vec<u8>, std::io::Error> = request.server_context().fs_read(path_buf);
+        let resp_body = request.server_context().fs_read(path_buf);
 
         return match resp_body {
             Ok(body) => Ok(Response::new(

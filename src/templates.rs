@@ -13,6 +13,7 @@ use crate::response::{Response, Status};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct TemplateRequestContext {
+    data: serde_json::Value,
     peer_addr: SocketAddr,
     path: String,
     is_authenticated: bool,
@@ -50,6 +51,7 @@ pub fn render_response_body_for_request(
     handlebars.register_decorator("media-type", Box::new(media_type_decorator));
 
     let request_data = TemplateRequestContext {
+        data: request.server_context().get_data(),
         peer_addr: *request.peer_addr(),
         path: (*request.url().path()).to_string(),
         is_authenticated: !request.client_certificate_details().is_anonymous(),

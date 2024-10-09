@@ -8,6 +8,8 @@ target/
 *.pem
 
 # Default content folders
+data/*
+!data/.gitkeep
 errdocs/*
 !errdocs/.gitkeep
 public_root/*

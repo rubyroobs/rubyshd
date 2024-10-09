@@ -1,6 +1,7 @@
 use std::{env, path::PathBuf};
 
 const DEFAULT_PUBLIC_ROOT_PATH: &str = "public_root";
+const DEFAULT_DATA_PATH: &str = "data";
 const DEFAULT_ERRDOCS_PATH: &str = "errdocs";
 const DEFAULT_MAX_REQUEST_HEADER_SIZE: usize = 2048;
 const DEFAULT_TLS_LISTEN_PORT: u16 = 4443;
@@ -12,6 +13,7 @@ const DEFAULT_DEFAULT_HOSTNAME: &str = "localhost";
 #[derive(Clone, Debug)]
 pub struct Config {
     public_root_path: String,
+    data_path: String,
     errdocs_path: String,
     max_request_header_size: usize,
     tls_listen_port: u16,
@@ -28,6 +30,11 @@ impl Config {
         )
         .expect("Invalid PUBLIC_ROOT_PATH")
         .to_string();
+
+        let data_path =
+            check_directory_path(&env::var("DATA_PATH").unwrap_or(DEFAULT_DATA_PATH.into()))
+                .expect("Invalid DATA_PATH")
+                .to_string();
 
         let errdocs_path =
             check_directory_path(&env::var("ERRDOCS_PATH").unwrap_or(DEFAULT_ERRDOCS_PATH.into()))
@@ -70,6 +77,7 @@ impl Config {
 
         Config {
             public_root_path: public_root_path.into(),
+            data_path: data_path.into(),
             errdocs_path: errdocs_path.into(),
             max_request_header_size: max_request_header_size,
             tls_listen_port: tls_listen_port,
@@ -82,6 +90,10 @@ impl Config {
 
     pub fn public_root_path(&self) -> &str {
         &self.public_root_path
+    }
+
+    pub fn data_path(&self) -> &str {
+        &self.data_path
     }
 
     pub fn errdocs_path(&self) -> &str {
