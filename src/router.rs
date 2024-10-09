@@ -18,6 +18,7 @@ pub fn route_request(request: &Request) -> Response {
     let trailing_slash = os_path_str.ends_with("/");
 
     if is_directory {
+        // explicit logic for directory indexes
         let try_path = match trailing_slash {
             true => format!("{}index.hbs", os_path_str),
             false => format!("{}/index.hbs", os_path_str),
@@ -44,11 +45,23 @@ pub fn route_request(request: &Request) -> Response {
             }
         }
     } else {
+        // First try exact requested path
         match try_route_request_for_path(&os_path_str, request) {
             Some(response) => {
                 return response;
             }
             None => {}
+        }
+
+        // Next see if the protocol appropriate default is available
+        // TODO: use Accept here for HTTP which would be more appropriate
+        for try_ext in request.protocol().media_type_file_extensions() {
+            match try_route_request_for_path(&format!("{}.{}", os_path_str, try_ext), request) {
+                Some(response) => {
+                    return response;
+                }
+                None => {}
+            }
         }
     }
 
