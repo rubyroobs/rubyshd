@@ -68,8 +68,7 @@ pub fn render_response_body_for_request(
             template_body.push_str("\n{{private-context-serialize}}");
             match request
                 .server_context()
-                .handlebars()
-                .render_template(&template_body, &request_data)
+                .handlebars_render_template(&template_body, &request_data)
             {
                 Ok(raw_rendered_body) => {
                     let (rendered_body, resp_context_str) = raw_rendered_body

@@ -5,6 +5,7 @@ use cached::{Cached as _, TimedSizedCache};
 use glob::glob;
 use handlebars::Handlebars;
 use log::debug;
+use serde::Serialize;
 use serde_json::json;
 
 const MAX_FS_CACHE_ENTRIES: usize = 512;
@@ -16,7 +17,7 @@ const MAX_DATA_CACHE_TTL_SECONDS: u64 = 10;
 #[derive(Debug)]
 pub struct ServerContext {
     config: Config,
-    handlebars: Handlebars<'static>,
+    handlebars: Mutex<Handlebars<'static>>,
     fs_cache: Mutex<TimedSizedCache<OsString, Vec<u8>>>,
     data_cache: Mutex<TimedSizedCache<OsString, serde_json::Value>>,
 }
@@ -35,7 +36,7 @@ impl ServerContext {
 
         ServerContext {
             config: config,
-            handlebars: handlebars,
+            handlebars: Mutex::new(handlebars),
             fs_cache: Mutex::new(TimedSizedCache::with_size_and_lifespan(
                 MAX_FS_CACHE_ENTRIES,
                 MAX_FS_CACHE_TTL_SECONDS,
@@ -51,8 +52,53 @@ impl ServerContext {
         &self.config
     }
 
-    pub fn handlebars(&self) -> &Handlebars {
-        &self.handlebars
+    pub fn handlebars_render_template<T>(
+        &self,
+        template_string: &str,
+        data: T,
+    ) -> Result<std::string::String, handlebars::RenderError>
+    where
+        T: Serialize,
+    {
+        self.register_handlebars_templates();
+        self.handlebars
+            .lock()
+            .unwrap()
+            .render_template(template_string, &data)
+    }
+
+    fn register_handlebars_templates(&self) {
+        let base_data_path = format!("{}/", self.config().partials_path());
+
+        // TODO: could probably have better debug logging for errors here
+        for entry in
+            glob(&format!("{}**/*.hbs", base_data_path)).expect("Failed to read data glob pattern")
+        {
+            match entry {
+                Ok(path_buf) => {
+                    let partial_name = path_buf
+                        .to_str()
+                        .unwrap()
+                        .strip_prefix(&base_data_path)
+                        .unwrap()
+                        .strip_suffix(".hbs")
+                        .unwrap()
+                        .to_string();
+
+                    match self.fs_read(path_buf) {
+                        Ok(data) => match std::str::from_utf8(&data) {
+                            Ok(value) => {
+                                let mut handlebars = self.handlebars.lock().unwrap();
+                                let _ = handlebars.register_template_string(&partial_name, value);
+                            }
+                            Err(_) => (),
+                        },
+                        Err(_) => (),
+                    }
+                }
+                Err(_) => {}
+            }
+        }
     }
 
     pub fn fs_read(&self, path_buf: PathBuf) -> Result<Vec<u8>, std::io::Error> {
@@ -106,7 +152,6 @@ impl ServerContext {
             }
         }
 
-        debug!("{:?}", data);
         data
     }
 

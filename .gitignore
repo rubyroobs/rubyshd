@@ -12,5 +12,7 @@ data/*
 !data/.gitkeep
 errdocs/*
 !errdocs/.gitkeep
+partials/*
+!partials/.gitkeep
 public_root/*
 !public_root/.gitkeep

@@ -1,6 +1,7 @@
 use std::{env, path::PathBuf};
 
 const DEFAULT_PUBLIC_ROOT_PATH: &str = "public_root";
+const DEFAULT_PARTIALS_PATH: &str = "partials";
 const DEFAULT_DATA_PATH: &str = "data";
 const DEFAULT_ERRDOCS_PATH: &str = "errdocs";
 const DEFAULT_MAX_REQUEST_HEADER_SIZE: usize = 2048;
@@ -13,6 +14,7 @@ const DEFAULT_DEFAULT_HOSTNAME: &str = "localhost";
 #[derive(Clone, Debug)]
 pub struct Config {
     public_root_path: String,
+    partials_path: String,
     data_path: String,
     errdocs_path: String,
     max_request_header_size: usize,
@@ -29,6 +31,12 @@ impl Config {
             &env::var("PUBLIC_ROOT_PATH").unwrap_or(DEFAULT_PUBLIC_ROOT_PATH.into()),
         )
         .expect("Invalid PUBLIC_ROOT_PATH")
+        .to_string();
+
+        let partials_path = check_directory_path(
+            &env::var("PARTIALS_PATH").unwrap_or(DEFAULT_PARTIALS_PATH.into()),
+        )
+        .expect("Invalid PARTIALS_PATH")
         .to_string();
 
         let data_path =
@@ -77,6 +85,7 @@ impl Config {
 
         Config {
             public_root_path: public_root_path.into(),
+            partials_path: partials_path.into(),
             data_path: data_path.into(),
             errdocs_path: errdocs_path.into(),
             max_request_header_size: max_request_header_size,
@@ -90,6 +99,10 @@ impl Config {
 
     pub fn public_root_path(&self) -> &str {
         &self.public_root_path
+    }
+
+    pub fn partials_path(&self) -> &str {
+        &self.partials_path
     }
 
     pub fn data_path(&self) -> &str {
