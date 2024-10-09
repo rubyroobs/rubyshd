@@ -88,6 +88,7 @@ The [`handlebars-rust`](https://github.com/sunng87/handlebars-rust) project is u
   * `is_anonymous` - opposite of `is_authenticated`
   * `is_https` - if the request was made with HTTPS protocol
   * `is_gemini` - if the request was made with Gemini protocol
+  * `os_platform` - the OS platform the server is running on (see [`std::env::consts::OS`](https://doc.rust-lang.org/std/env/consts/constant.OS.html) for a list of possible values)
 
 An example template combining some of these decorators and properties might look like:
 

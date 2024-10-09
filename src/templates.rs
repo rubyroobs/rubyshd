@@ -1,4 +1,5 @@
 use log::error;
+use std::env;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
@@ -22,6 +23,7 @@ struct TemplateRequestContext {
     protocol: String,
     is_gemini: bool,
     is_https: bool,
+    os_platform: String,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -61,6 +63,7 @@ pub fn render_response_body_for_request(
         protocol: request.protocol().to_string(),
         is_gemini: request.protocol() == Protocol::Gemini,
         is_https: request.protocol() == Protocol::Https,
+        os_platform: env::consts::OS.to_string(),
     };
 
     match String::from_utf8(body) {
