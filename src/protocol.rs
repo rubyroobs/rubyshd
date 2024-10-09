@@ -66,8 +66,8 @@ impl Protocol {
                     Status::NotFound => (51, "Not Found"),
                     Status::RequestTooLarge => (59, "Payload Too Large"),
                     Status::RateLimit => (44, "Too Many Requests"),
-                    Status::OtherServerError => (40, "OK"),
-                    Status::OtherClientError => (59, "Internal Server Error"),
+                    Status::OtherServerError => (40, "Internal Server Error"),
+                    Status::OtherClientError => (59, "Bad Request"),
                 };
 
                 stream.write_all(status.to_string().as_bytes()).await?;
@@ -89,13 +89,13 @@ impl Protocol {
                     Status::Success => (200, "OK"),
                     Status::PermanentRedirect => (301, "Moved Permanently"),
                     Status::TemporaryRedirect => (302, "Found"),
-                    Status::OtherClientError => (400, "Internal Server Error"),
+                    Status::OtherClientError => (400, "Bad Request"),
                     Status::Unauthenticated => (401, "Unauthenticated"), // this is intentionally not "Unauthorized"
                     Status::Unauthorized => (403, "Forbidden"),
                     Status::NotFound => (404, "Not Found"),
                     Status::RequestTooLarge => (413, "Payload Too Large"),
                     Status::RateLimit => (429, "Too Many Requests"),
-                    Status::OtherServerError => (500, "OK"),
+                    Status::OtherServerError => (500, "Internal Server Error"),
                 };
 
                 let body_len = response.body().len();
