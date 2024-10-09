@@ -30,7 +30,7 @@ impl fmt::Display for Protocol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Protocol::Gemini => write!(f, "Gemini"),
-            Protocol::Https => write!(f, "HTTP"),
+            Protocol::Https => write!(f, "HTTPS"),
         }
     }
 }
