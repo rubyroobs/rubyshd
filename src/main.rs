@@ -13,8 +13,8 @@ use config::Config;
 use context::ServerContext;
 use log::{debug, error, info};
 use router::route_request;
+use std::io;
 use std::sync::Arc;
-use std::{io, net};
 use tokio::io::{copy, sink, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
@@ -59,23 +59,19 @@ async fn main() -> io::Result<()> {
         "Starting server with config: {:#?}",
         server_context.config()
     );
-    setup_pledge_and_unveil(server_context.config());
 
-    let mut addr: net::SocketAddr = "127.0.0.1:443".parse().unwrap();
-    // TODO: support dynamic addr
-    addr.set_port(server_context.config().tls_listen_port());
+    setup_pledge_and_unveil(server_context.config());
 
     let tls_config = tls::make_config(&server_context.config());
 
     let acceptor = TlsAcceptor::from(tls_config);
 
-    let listener = TcpListener::bind(&addr).await?;
+    let listener = TcpListener::bind(server_context.config().tls_listen_bind()).await?;
 
     loop {
         let (stream, peer_addr) = listener.accept().await?;
         let acceptor = acceptor.clone();
         let server_context = server_context.clone();
-        let tls_listen_port = server_context.config().tls_listen_port();
 
         let fut = async move {
             let mut stream = acceptor.accept(stream).await?;
@@ -112,7 +108,7 @@ async fn main() -> io::Result<()> {
                         .await?;
                 }
                 Err(err) => {
-                    error!("ERROR [{} -> {}] msg = {}", peer_addr, tls_listen_port, err);
+                    error!("ERROR [{} ->] msg = {}", peer_addr, err);
                 }
             }
 

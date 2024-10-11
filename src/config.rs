@@ -1,11 +1,11 @@
-use std::{env, path::PathBuf};
+use std::{env, net, path::PathBuf};
 
 const DEFAULT_PUBLIC_ROOT_PATH: &str = "public_root";
 const DEFAULT_PARTIALS_PATH: &str = "partials";
 const DEFAULT_DATA_PATH: &str = "data";
 const DEFAULT_ERRDOCS_PATH: &str = "errdocs";
 const DEFAULT_MAX_REQUEST_HEADER_SIZE: usize = 2048;
-const DEFAULT_TLS_LISTEN_PORT: u16 = 4443;
+const DEFAULT_TLS_LISTEN_BIND: &str = "127.0.0.1:4443";
 const DEFAULT_TLS_CLIENT_CA_CERTIFICATE_PEM_FILENAME: &str = "ca.cert.pem";
 const DEFAULT_TLS_SERVER_CERTIFICATE_PEM_FILENAME: &str = "localhost.cert.pem";
 const DEFAULT_TLS_SERVER_PRIVATE_KEY_PEM_FILENAME: &str = "localhost.pem";
@@ -18,7 +18,7 @@ pub struct Config {
     data_path: String,
     errdocs_path: String,
     max_request_header_size: usize,
-    tls_listen_port: u16,
+    tls_listen_bind: net::SocketAddrV4,
     tls_client_ca_certificate_pem_filename: String,
     tls_server_certificate_pem_filename: String,
     tls_server_private_key_pem_filename: String,
@@ -54,10 +54,10 @@ impl Config {
             .parse()
             .expect("Invalid MAX_REQUEST_HEADER_SIZE");
 
-        let tls_listen_port: u16 = env::var("TLS_LISTEN_PORT")
-            .unwrap_or(format!("{}", DEFAULT_TLS_LISTEN_PORT))
+        let tls_listen_bind: net::SocketAddrV4 = env::var("TLS_LISTEN_BIND")
+            .unwrap_or(DEFAULT_TLS_LISTEN_BIND.to_string())
             .parse()
-            .expect("Invalid TLS_LISTEN_PORT");
+            .expect("Invalid TLS_LISTEN_BIND");
 
         let tls_client_ca_certificate_pem_filename = check_file_path(
             &env::var("TLS_CLIENT_CA_CERTIFICATE_PEM_FILENAME")
@@ -89,7 +89,7 @@ impl Config {
             data_path: data_path.into(),
             errdocs_path: errdocs_path.into(),
             max_request_header_size: max_request_header_size,
-            tls_listen_port: tls_listen_port,
+            tls_listen_bind: tls_listen_bind,
             tls_client_ca_certificate_pem_filename: tls_client_ca_certificate_pem_filename.into(),
             tls_server_certificate_pem_filename: tls_server_certificate_pem_filename.into(),
             tls_server_private_key_pem_filename: tls_server_private_key_pem_filename.into(),
@@ -117,8 +117,8 @@ impl Config {
         self.max_request_header_size
     }
 
-    pub fn tls_listen_port(&self) -> u16 {
-        self.tls_listen_port
+    pub fn tls_listen_bind(&self) -> &net::SocketAddrV4 {
+        &self.tls_listen_bind
     }
 
     pub fn tls_client_ca_certificate_pem_filename(&self) -> &str {

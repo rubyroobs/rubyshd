@@ -8,7 +8,7 @@ I built this mainly to learn more about Gemini and play around in Rust more, but
 
 ### Building and running the server
 
-If you ran all the required commands in the "Initial setup" section below in the repository root, the server should start with just:
+If you ran all the required commands in the "Initial setup" section below in the repository root, on most operating systems the server should start with just:
 
 ```shell
 cargo run
@@ -22,45 +22,7 @@ To get detailed debug messages about what's going on, run with `RUST_LOG=DEBUG`:
 RUST_LOG=DEBUG cargo run
 ```
 
-#### OpenBSD
-
-Some additional ports and environment variables are required to build on OpenBSD:
-
-```shell
-doas pkg_add llvm cmake
-export LIBCLANG_PATH=/usr/local/llvm17/lib
-cargo build
-```
-
-You might also want to setup [`relayd(8)`](https://man.openbsd.org/relayd.8) to bind `0.0.0.0:443` and `0.0.0.0:1965` to the single listen port `4443`.
-
-Enable:
-
-```
-doas vi /etc/relayd.conf
-doas rcctl enable relayd
-doas rcctl start relayd
-```
-
-An example [`relayd.conf(5)`](https://man.openbsd.org/relayd.conf.5):
-
-```
-protocol "rubyshd" {
-        tcp { nodelay, socket buffer 65536 }
-}
-
-relay "rubyshd_gemini" {
-        listen on 0.0.0.0 port 1965
-        protocol "rubyshd"
-        forward to 127.0.0.1 port 4443
-}
-
-relay "rubyshd_https" {
-        listen on 0.0.0.0 port 443
-        protocol "rubyshd"
-        forward to 127.0.0.1 port 4443
-}
-```
+If running OpenBSD, see the OpenBSD-specific information at the bottom of the file.
 
 ### Folder structure and configuration
 
@@ -79,7 +41,7 @@ When running on OpenBSD, the application will lock filesystem access down to jus
 These other configuration options are also configurable by environment variable:
 
 - `MAX_REQUEST_HEADER_SIZE` - The maximum acceptable size for a request. Defaults to 2048.
-- `TLS_LISTEN_PORT` - The TLS port to listen on. Both HTTPS and Gemini will be served from this single port - consider using [`relayd(8)`](https://man.openbsd.org/relayd.8) or similar if you want to serve on both 443/1965. Defaults to 4443.
+- `TLS_LISTEN_BIND` - The address/port to listen on. Both HTTPS and Gemini will be served from this single bind - consider using [`relayd(8)`](https://man.openbsd.org/relayd.8) or similar if you want to serve on both ports 443/1965 - an example [`relayd.conf(5)`](https://man.openbsd.org/relayd.conf.5) is provided below. Defaults to `127.0.0.1:4443`.
 - `DEFAULT_HOSTNAME` - The default hostname used to generate a [`url::Url`](https://docs.rs/url/latest/url/struct.Url.html) when a `Host` header is not present in an HTTPS request. Defaults to `ruby.sh`.
 
 ### Routing
@@ -211,6 +173,73 @@ cp /Users/ruby/.acme.sh/ruby.sh_ecc/ruby.sh.cer ruby.sh.cert.pem
 cp /Users/ruby/.acme.sh/ruby.sh_ecc/ruby.sh.key ruby.sh.pem
 cp /Users/ruby/.acme.sh/ruby.sh_ecc/ca.cer ruby.sh.intermediate.pem
 cp /Users/ruby/.acme.sh/ruby.sh_ecc/fullchain.cer ruby.sh.fullchain.pem
+```
+
+## OpenBSD
+
+### Building
+
+Some additional ports and environment variables are required to build on OpenBSD:
+
+```shell
+doas pkg_add llvm cmake
+export LIBCLANG_PATH=/usr/local/llvm17/lib
+cargo build # or cargo build --release
+```
+
+### Deploying
+
+You might also want to setup [`relayd(8)`](https://man.openbsd.org/relayd.8) to bind `0.0.0.0:443` and `0.0.0.0:1965` to the single listen port `4443`.
+
+Enable:
+
+```
+doas vi /etc/relayd.conf
+doas rcctl enable relayd
+doas rcctl start relayd
+```
+
+An example [`relayd.conf(5)`](https://man.openbsd.org/relayd.conf.5):
+
+```
+protocol "rubyshd" {
+        tcp { nodelay, sack, socket buffer 65536, backlog 100 }
+}
+
+relay "rubyshd_gemini" {
+        listen on 0.0.0.0 port 1965
+        protocol "rubyshd"
+        forward to 127.0.0.1 port 4443
+}
+
+relay "rubyshd_https" {
+        listen on 0.0.0.0 port 443
+        protocol "rubyshd"
+        forward to 127.0.0.1 port 4443
+}
+```
+
+An example [`rc.d`](https://man.openbsd.org/rc.d) daemon control script:
+
+```shell
+#!/bin/ksh
+
+daemon="/home/ruby/rubyshd/target/release/rubyshd"
+daemon_user="ruby"
+daemon_execdir="/home/ruby/rubyshd"
+
+. /etc/rc.d/rc.subr
+
+rc_start() { 
+    export RUST_LOG="info"
+    export DEFAULT_HOSTNAME="ruby.sh"
+    export TLS_SERVER_CERTIFICATE_PEM_FILENAME="ruby.sh.fullchain.pem" 
+    export TLS_SERVER_PRIVATE_KEY_PEM_FILENAME="ruby.sh.pem"
+    exec /home/ruby/rubyshd/target/release/rubyshd & 
+} 
+
+rc_bg=YES
+rc_cmd $1
 ```
 
 ## Future work
