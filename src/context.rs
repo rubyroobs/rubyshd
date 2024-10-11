@@ -10,7 +10,6 @@ use crate::{
     templates::{initialize_handlebars, DEFAULT_BLANK_PARTIAL_NAME},
 };
 use cached::stores::ExpiringSizedCache;
-use glob::glob;
 use handlebars::Handlebars;
 use log::{debug, error};
 use serde::Serialize;
@@ -84,14 +83,10 @@ impl ServerContext {
             .into_iter()
             .filter_map(|e| e.ok())
         {
-            let f_name = entry.file_name().to_string_lossy();
-
-            if f_name.ends_with(".hbs") {
-                let path_buf = entry.into_path();
-
-                let partial_name = path_buf
-                    .to_str()
-                    .unwrap()
+            let path_buf = entry.into_path();
+            let path_str = path_buf.to_str().unwrap();
+            if path_str.ends_with(".hbs") {
+                let partial_name = path_str
                     .strip_prefix(&format!("{}/", self.config().partials_path()))
                     .unwrap()
                     .strip_suffix(".hbs")
@@ -182,34 +177,30 @@ impl ServerContext {
     }
 
     pub fn get_data(&self) -> serde_json::Value {
-        let base_data_path = format!("{}/", self.config().data_path());
-
         let mut data = json!({});
 
-        for entry in
-            glob(&format!("{}**/*.json", base_data_path)).expect("Failed to read data glob pattern")
+        for entry in WalkDir::new(self.config().data_path())
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
         {
-            match entry {
-                Ok(path_buf) => {
-                    let data_key = path_buf
-                        .to_str()
-                        .unwrap()
-                        .strip_prefix(&base_data_path)
-                        .unwrap()
-                        .strip_suffix(".json")
-                        .unwrap()
-                        .to_string();
-                    match self.data_read(path_buf) {
-                        Ok(value) => {
-                            data.as_object_mut().unwrap().insert(data_key, value);
-                        }
-                        Err(err) => {
-                            error!("ERROR reading data JSON file {}: {:?}", data_key, err)
-                        }
+            let path_buf = entry.into_path();
+            let path_str = path_buf.to_str().unwrap();
+            if path_str.ends_with(".json") {
+                let data_key = path_str
+                    .strip_prefix(&format!("{}/", self.config().data_path()))
+                    .unwrap()
+                    .strip_suffix(".json")
+                    .unwrap()
+                    .to_string();
+
+                match self.data_read(path_buf) {
+                    Ok(value) => {
+                        data.as_object_mut().unwrap().insert(data_key, value);
                     }
-                }
-                Err(err) => {
-                    error!("ERROR loading JSON files by glob: {:?}", err)
+                    Err(err) => {
+                        error!("ERROR reading data JSON file {}: {:?}", data_key, err)
+                    }
                 }
             }
         }
