@@ -20,7 +20,7 @@ use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 
 #[cfg(target_os = "openbsd")]
-use openbsd::{pledge_promises, unveil};
+use openbsd::{pledge::pledge_promises, unveil};
 
 #[cfg(target_os = "openbsd")]
 pub fn setup_pledge_and_unveil(server_config: &Config) {
