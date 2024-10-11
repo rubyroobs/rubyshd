@@ -26,7 +26,7 @@ use openbsd::{pledge, unveil};
 pub fn setup_pledge_and_unveil(server_config: &Config) {
     debug!("openbsd, calling pledge and unveil");
 
-    pledge("stdio", "rpath", "dns", "inet", "unix", "unveil")
+    pledge_promises("stdio rpath dns inet unix unveil")
         .expect("could not pledge required promises/execpromises");
 
     unveil("/dev/urandom", "r").expect("could not unveil urandom");
@@ -61,7 +61,8 @@ async fn main() -> io::Result<()> {
     );
     setup_pledge_and_unveil(server_context.config());
 
-    let mut addr: net::SocketAddr = "[::]:443".parse().unwrap();
+    let mut addr: net::SocketAddr = "127.0.0.1:443".parse().unwrap();
+    // TODO: support dynamic addr
     addr.set_port(server_context.config().tls_listen_port());
 
     let tls_config = tls::make_config(&server_context.config());
