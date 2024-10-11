@@ -139,6 +139,11 @@ impl Protocol {
                     });
                 }
 
+                headers.push(HttpHeaderEntry {
+                    name: "Access-Control-Allow-Origin".to_string(),
+                    value: "*".to_string(),
+                });
+
                 // Headers
                 stream.write_all(&b"HTTP/1.1 "[..]).await?;
                 stream.write_all(status.to_string().as_bytes()).await?;
