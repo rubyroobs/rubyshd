@@ -11,7 +11,7 @@ mod tls;
 use crate::protocol::Protocol;
 use config::Config;
 use context::ServerContext;
-use log::{debug, error};
+use log::{debug, error, info};
 use router::route_request;
 use std::sync::Arc;
 use std::{io, net};
@@ -55,7 +55,7 @@ async fn main() -> io::Result<()> {
 
     let server_context = Arc::new(ServerContext::new_with_config(Config::new_from_env()));
 
-    debug!(
+    info!(
         "Starting server with config: {:#?}",
         server_context.config()
     );
