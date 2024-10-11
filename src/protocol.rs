@@ -40,7 +40,7 @@ impl fmt::Display for Protocol {
 impl Protocol {
     pub fn media_type(&self) -> String {
         match self {
-            Protocol::Gemini => "text/gemini".into(),
+            Protocol::Gemini => "text/gemini; charset=utf-8".into(),
             Protocol::Https => "text/html; charset=utf-8".into(),
         }
     }

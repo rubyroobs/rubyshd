@@ -5,7 +5,10 @@ use std::{
     sync::Mutex,
 };
 
-use crate::{config::Config, templates::initialize_handlebars};
+use crate::{
+    config::Config,
+    templates::{initialize_handlebars, DEFAULT_BLANK_PARTIAL_NAME},
+};
 use cached::stores::ExpiringSizedCache;
 use glob::glob;
 use handlebars::Handlebars;
@@ -120,6 +123,13 @@ impl ServerContext {
                     error!("ERROR loading JSON files by glob: {:?}", err)
                 }
             }
+        }
+
+        // Register special "blank" partial
+        let mut handlebars = self.handlebars.lock().unwrap();
+        match handlebars.register_template_string(DEFAULT_BLANK_PARTIAL_NAME, "") {
+            Ok(_) => {}
+            Err(err) => error!("ERROR registering default handlebar partial blank: {}", err),
         }
     }
 

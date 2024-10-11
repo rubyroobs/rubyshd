@@ -1,8 +1,8 @@
 use log::error;
 use rand::seq::{IteratorRandom as _, SliceRandom};
-use std::env;
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::{env, fmt};
 
 use handlebars::{
     to_json, Context, Decorator, Handlebars, Helper, HelperDef, HelperResult, JsonRender, Output,
@@ -13,6 +13,42 @@ use crate::protocol::Protocol;
 use crate::request::Request;
 use crate::response::{Response, Status};
 
+pub const DEFAULT_BLANK_PARTIAL_NAME: &str = "blank";
+
+#[derive(Copy, Clone, Debug)]
+pub enum Markup {
+    Html,
+    Gemtext,
+    Markdown,
+}
+
+impl fmt::Display for Markup {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Markup::Gemtext => write!(f, "Gemtext"),
+            Markup::Html => write!(f, "HTML"),
+            Markup::Markdown => write!(f, "Markdown"),
+        }
+    }
+}
+
+impl Markup {
+    pub fn default_for_protocol(protocol: Protocol) -> Markup {
+        match protocol {
+            Protocol::Gemini => Markup::Gemtext,
+            Protocol::Https => Markup::Html,
+        }
+    }
+
+    pub fn media_type(&self) -> String {
+        match self {
+            Markup::Gemtext => Protocol::Gemini.media_type(),
+            Markup::Html => Protocol::Https.media_type(),
+            Markup::Markdown => "text/markdown; charset=utf-8".into(),
+        }
+    }
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 struct TemplateRequestContext {
     data: serde_json::Value,
@@ -22,6 +58,7 @@ struct TemplateRequestContext {
     is_anonymous: bool,
     common_name: String,
     protocol: String,
+    markup: String,
     is_gemini: bool,
     is_https: bool,
     os_platform: String,
@@ -41,10 +78,7 @@ pub fn initialize_handlebars(handlebars: &mut Handlebars) {
         Box::new(serialize_context_helper),
     );
     handlebars.register_helper("pick-random", Box::new(pick_random_helper));
-    handlebars.register_helper(
-        "partial-for-protocol",
-        Box::new(partial_for_protocol_helper),
-    );
+    handlebars.register_helper("partial-for-markup", Box::new(partial_for_markup_helper));
     handlebars.register_decorator("set", Box::new(set_decorator));
     handlebars.register_decorator("temporary-redirect", Box::new(temporary_redirect_decorator));
     handlebars.register_decorator("permanent-redirect", Box::new(permanent_redirect_decorator));
@@ -54,11 +88,93 @@ pub fn initialize_handlebars(handlebars: &mut Handlebars) {
 
 pub fn render_response_body_for_request(
     loaded_path: &str,
-    default_media_type: &str,
+    markup: Markup,
     request: &Request,
     response: &Response,
 ) -> Result<Response, Status> {
     let body = response.body().to_vec();
+
+    match String::from_utf8(body) {
+        Ok(template_body) => match render_template(request, &template_body, markup) {
+            Ok((rendered_body, response_context)) => {
+                let status = match response_context.status {
+                    Some(status_str) => match Status::from_str(&status_str) {
+                        Ok(status) => status,
+                        Err(_) => {
+                            error!(
+                                  "[{}] [{}] [{}] [{}] Handlebars error in {}: status set to unknown status code {}",
+                                  request.protocol(),
+                                  request.peer_addr(),
+                                  request.client_certificate_details(),
+                                  request.path(),
+                                  loaded_path,
+                                  status_str
+                                );
+                            Status::Success
+                        }
+                    },
+                    None => match response_context.redirect_permanent {
+                        Some(is_permanent) => match is_permanent {
+                            true => Status::PermanentRedirect,
+                            false => Status::TemporaryRedirect,
+                        },
+                        None => Status::Success,
+                    },
+                };
+
+                let media_type = match response_context.media_type {
+                    Some(context_media_type) => context_media_type.to_owned(),
+                    None => markup.media_type().to_owned(),
+                };
+
+                match response_context.redirect_uri {
+                    None => Ok(Response::new(
+                        status,
+                        &media_type,
+                        rendered_body.as_bytes(),
+                        false,
+                    )),
+                    Some(redirect_uri) => {
+                        Ok(Response::new_with_redirect_uri(status, &redirect_uri))
+                    }
+                }
+            }
+            Err(err) => {
+                error!(
+                    "[{}] [{}] [{}] [{}] Handlebars error in {}: {}",
+                    request.protocol(),
+                    request.peer_addr(),
+                    request.client_certificate_details(),
+                    request.path(),
+                    loaded_path,
+                    err
+                );
+                Err(Status::OtherServerError)
+            }
+        },
+        Err(err) => {
+            error!(
+                "[{}] [{}] [{}] [{}] Unicode error reading {} (valid up to {})",
+                request.protocol(),
+                request.peer_addr(),
+                request.client_certificate_details(),
+                request.path(),
+                loaded_path,
+                err.utf8_error().valid_up_to()
+            );
+            Err(Status::OtherServerError)
+        }
+    }
+}
+
+fn render_template(
+    request: &Request,
+    template_string: &str,
+    markup: Markup,
+) -> Result<(String, TemplateResponseContext), handlebars::RenderError> {
+    let mut template_string = template_string.to_string();
+
+    template_string.push_str("\n{{private-context-serialize}}");
 
     let request_data = TemplateRequestContext {
         data: request.server_context().get_data(),
@@ -68,95 +184,97 @@ pub fn render_response_body_for_request(
         is_anonymous: request.client_certificate_details().is_anonymous(),
         common_name: request.client_certificate_details().common_name(),
         protocol: request.protocol().to_string(),
+        markup: markup.to_string(),
         is_gemini: request.protocol() == Protocol::Gemini,
         is_https: request.protocol() == Protocol::Https,
         os_platform: env::consts::OS.to_string(),
     };
 
-    match String::from_utf8(body) {
-        Ok(mut template_body) => {
-            template_body.push_str("\n{{private-context-serialize}}");
-            match request
-                .server_context()
-                .handlebars_render_template(&template_body, &request_data)
-            {
-                Ok(raw_rendered_body) => {
-                    let (rendered_body, resp_context_str) = raw_rendered_body
-                        .rsplit_once("\n")
-                        .unwrap_or((&raw_rendered_body, "{}"));
+    match request
+        .server_context()
+        .handlebars_render_template(&template_string, &request_data)
+    {
+        Ok(raw_rendered_body) => {
+            let (rendered_body, resp_context_str) = raw_rendered_body
+                .rsplit_once("\n")
+                .unwrap_or((&raw_rendered_body, "{}"));
 
-                    let response_context: TemplateResponseContext =
-                        serde_json::from_str(resp_context_str).unwrap_or(TemplateResponseContext {
-                            status: None,
-                            media_type: None,
-                            redirect_uri: None,
-                            redirect_permanent: None,
-                        });
+            let response_context: TemplateResponseContext = serde_json::from_str(resp_context_str)
+                .unwrap_or(TemplateResponseContext {
+                    status: None,
+                    media_type: None,
+                    redirect_uri: None,
+                    redirect_permanent: None,
+                });
+            Ok((rendered_body.to_string(), response_context))
+        }
+        Err(err) => Err(err),
+    }
+}
 
-                    let status = match response_context.status {
-                        Some(status_str) => match Status::from_str(&status_str) {
-                            Ok(status) => status,
-                            Err(_) => {
-                                error!(
-                                  "[{}] [{}] [{}] [{}] Handlebars error in {}: status set to unknown status code {}",
-                                  request.protocol(),
-                                  request.peer_addr(),
-                                  request.client_certificate_details(),
-                                  request.path(),
-                                  loaded_path,
-                                  status_str
-                                );
-                                Status::Success
-                            }
+pub fn render_markdown_response_for_request(
+    request: &Request,
+    response: &Response,
+    loaded_path: &str,
+    target_markup: Markup,
+) -> Result<Response, Status> {
+    match String::from_utf8(response.body().to_vec()) {
+        Ok(resp_body_str) => {
+            // Remove <?meta meta?> processing tags used to keep post-processable handlebars calls from being encoded
+            let strip_meta_tags = |str: String| -> String {
+                str.replace("<?meta ", "")
+                    .replace("<?meta", "")
+                    .replace(" meta?>", "")
+                    .replace("meta?>", "")
+            };
+
+            let rendered_md = match target_markup {
+                Markup::Gemtext => {
+                    // Strip BEFORE for md2gemtext as it borks HTML-looking things
+                    md2gemtext::convert(&strip_meta_tags(resp_body_str))
+                }
+                Markup::Html => match markdown::to_html_with_options(
+                    &resp_body_str,
+                    &markdown::Options {
+                        compile: markdown::CompileOptions {
+                            allow_dangerous_html: true,
+                            ..markdown::CompileOptions::default()
                         },
-                        None => match response_context.redirect_permanent {
-                            Some(is_permanent) => match is_permanent {
-                                true => Status::PermanentRedirect,
-                                false => Status::TemporaryRedirect,
-                            },
-                            None => Status::Success,
-                        },
-                    };
-
-                    let media_type = match response_context.media_type {
-                        Some(context_media_type) => context_media_type.to_owned(),
-                        None => default_media_type.to_owned(),
-                    };
-
-                    match response_context.redirect_uri {
-                        None => Ok(Response::new(
-                            status,
-                            &media_type,
-                            rendered_body.as_bytes(),
-                            false,
-                        )),
-                        Some(redirect_uri) => {
-                            Ok(Response::new_with_redirect_uri(status, &redirect_uri))
-                        }
+                        ..markdown::Options::default()
+                    },
+                ) {
+                    Ok(str) => {
+                        // Strip AFTER for markdown::to_html_with_options as otherwise handlebars get turned into HTML entities
+                        strip_meta_tags(str)
                     }
-                }
-                Err(err) => {
-                    error!(
-                        "[{}] [{}] [{}] [{}] Handlebars error in {}: {}",
-                        request.protocol(),
-                        request.peer_addr(),
-                        request.client_certificate_details(),
-                        request.path(),
-                        loaded_path,
-                        err
-                    );
-                    Err(Status::OtherServerError)
-                }
+                    Err(err) => {
+                        error!("Error converting markdown to HTML: {}", err);
+                        return Err(Status::OtherServerError);
+                    }
+                },
+                Markup::Markdown => strip_meta_tags(resp_body_str), // Markdown just needs the meta tags stripping...
+            };
+
+            let md_response = Response::new(
+                *response.status(),
+                &target_markup.media_type(),
+                rendered_md.as_bytes(),
+                false,
+            );
+
+            match render_response_body_for_request(
+                loaded_path,
+                target_markup,
+                request,
+                &md_response,
+            ) {
+                Ok(rerendered_md_resp) => Ok(rerendered_md_resp),
+                Err(status) => Err(status),
             }
         }
         Err(err) => {
             error!(
-                "[{}] [{}] [{}] [{}] Unicode error reading {} (valid up to {})",
-                request.protocol(),
-                request.peer_addr(),
-                request.client_certificate_details(),
-                request.path(),
-                loaded_path,
+                "Unicode error in pre-rendered markdown template (valid up to {})",
                 err.utf8_error().valid_up_to()
             );
             Err(Status::OtherServerError)
@@ -211,9 +329,9 @@ impl HelperDef for pick_random_helper {
 }
 
 #[allow(non_camel_case_types)]
-pub struct partial_for_protocol_helper;
+pub struct partial_for_markup_helper;
 
-impl HelperDef for partial_for_protocol_helper {
+impl HelperDef for partial_for_markup_helper {
     fn call_inner<'reg: 'rc, 'rc>(
         &self,
         h: &Helper<'rc>,
@@ -222,7 +340,7 @@ impl HelperDef for partial_for_protocol_helper {
         _: &mut RenderContext<'reg, 'rc>,
     ) -> Result<ScopedJson<'reg>, RenderError> {
         let param = h.param(0).ok_or(RenderErrorReason::ParamNotFoundForIndex(
-            "partial-for-protocol",
+            "partial-for-markup",
             0,
         ))?;
 
@@ -230,23 +348,22 @@ impl HelperDef for partial_for_protocol_helper {
             .data()
             .as_object()
             .unwrap()
-            .get("protocol")
+            .get("markup")
             .unwrap()
             .as_str()
             .unwrap()
         {
-            "Gemini" => Ok(ScopedJson::Derived(serde_json::Value::String(format!(
+            "Gemtext" => Ok(ScopedJson::Derived(serde_json::Value::String(format!(
                 "{}.gmi",
                 param.value().render()
             )))),
-            "HTTPS" => Ok(ScopedJson::Derived(serde_json::Value::String(format!(
+            "HTML" => Ok(ScopedJson::Derived(serde_json::Value::String(format!(
                 "{}.html",
                 param.value().render()
             )))),
-            _ => Ok(ScopedJson::Derived(serde_json::Value::String(format!(
-                "{}",
-                param.value().render()
-            )))),
+            _ => Ok(ScopedJson::Derived(serde_json::Value::String(
+                DEFAULT_BLANK_PARTIAL_NAME.to_string(),
+            ))),
         }
     }
 }

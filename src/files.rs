@@ -2,10 +2,14 @@ use log::error;
 
 use crate::request::Request;
 use crate::response::{Response, Status};
-use crate::templates::render_response_body_for_request;
+use crate::templates::{render_response_body_for_request, Markup};
 use std::path::PathBuf;
 
-pub fn try_load_files_with_template(path: &str, request: &Request) -> Result<Response, Status> {
+pub fn try_load_files_with_template(
+    path: &str,
+    request: &Request,
+    markup: Markup,
+) -> Result<Response, Status> {
     let mut try_path = path.to_string();
 
     if !try_path.ends_with(".hbs") {
@@ -26,17 +30,10 @@ pub fn try_load_files_with_template(path: &str, request: &Request) -> Result<Res
 
     // Exact match template (handlebars)
     match try_load_file(&try_path, &request) {
-        Ok(response) => {
-            match render_response_body_for_request(
-                path,
-                &request.protocol().media_type(),
-                request,
-                &response,
-            ) {
-                Ok(rendered_response) => Ok(rendered_response),
-                Err(status) => Err(status),
-            }
-        }
+        Ok(response) => match render_response_body_for_request(path, markup, request, &response) {
+            Ok(rendered_response) => Ok(rendered_response),
+            Err(status) => Err(status),
+        },
         Err(status) => Err(status),
     }
 }

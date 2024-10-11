@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr};
 
-use crate::{files::try_load_files_with_template, request::Request};
+use crate::{files::try_load_files_with_template, request::Request, templates::Markup};
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Status {
@@ -94,7 +94,11 @@ impl Response {
                 try_ext
             );
 
-            match try_load_files_with_template(&try_path, &request) {
+            match try_load_files_with_template(
+                &try_path,
+                &request,
+                Markup::default_for_protocol(request.protocol()),
+            ) {
                 Ok(response) => {
                     return Response {
                         status: status,

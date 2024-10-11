@@ -15,6 +15,8 @@ glob = "0.3.1"
 handlebars = "6.1.0"
 httparse = "1.8.0"
 log = { version = "0.4.4" }
+markdown = "1.0.0-alpha.21"
+md2gemtext = "0.1.0"
 mime_guess = "2.0.5"
 mio = { version = "0.8", features = ["net", "os-poll"] }
 pki-types = { package = "rustls-pki-types", version = "1", features = ["std"] }
