@@ -20,16 +20,20 @@ use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 
 #[cfg(target_os = "openbsd")]
-use openbsd::unveil;
+use openbsd::{pledge, unveil};
 
 #[cfg(target_os = "openbsd")]
-pub fn setup_unveil(server_config: &Config) {
-    debug!("openbsd, calling unveil");
+pub fn setup_pledge_and_unveil(server_config: &Config) {
+    debug!("openbsd, calling pledge and unveil");
+
+    pledge("stdio", "rpath", "dns", "inet", "unix", "unveil")
+        .expect("could not pledge required promises/execpromises");
+
     unveil("/dev/urandom", "r").expect("could not unveil urandom");
-    unveil(server_config.public_root_path(), "r").expect("could not unveil public docs folder");
-    unveil(server_config.partials_path(), "r").expect("could not unveil template partials folder");
-    unveil(server_config.errdocs_path(), "r").expect("could not unveil error docs folder");
-    unveil(server_config.data_path(), "r").expect("could not unveil data folder");
+    unveil(server_config.public_root_path(), "rx").expect("could not unveil public docs folder");
+    unveil(server_config.partials_path(), "rx").expect("could not unveil template partials folder");
+    unveil(server_config.errdocs_path(), "rx").expect("could not unveil error docs folder");
+    unveil(server_config.data_path(), "rx").expect("could not unveil data folder");
     unveil(server_config.tls_client_ca_certificate_pem_filename(), "r")
         .expect("could not unveil TLS CA certificate");
     unveil(server_config.tls_server_certificate_pem_filename(), "r")
@@ -41,7 +45,7 @@ pub fn setup_unveil(server_config: &Config) {
 }
 
 #[cfg(not(target_os = "openbsd"))]
-pub fn setup_unveil(_: &Config) {
+pub fn setup_pledge_and_unveil(_: &Config) {
     debug!("not openbsd. :(");
 }
 
@@ -55,7 +59,7 @@ async fn main() -> io::Result<()> {
         "Starting server with config: {:#?}",
         server_context.config()
     );
-    setup_unveil(server_context.config());
+    setup_pledge_and_unveil(server_context.config());
 
     let mut addr: net::SocketAddr = "[::]:443".parse().unwrap();
     addr.set_port(server_context.config().tls_listen_port());

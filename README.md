@@ -6,7 +6,7 @@ I built this mainly to learn more about Gemini and play around in Rust more, but
 
 ## Usage
 
-### Running the server
+### Building and running the server
 
 If you ran all the required commands in the "Initial setup" section below in the repository root, the server should start with just:
 
@@ -20,6 +20,46 @@ To get detailed debug messages about what's going on, run with `RUST_LOG=DEBUG`:
 
 ```shell
 RUST_LOG=DEBUG cargo run
+```
+
+#### OpenBSD
+
+Some additional ports and environment variables are required to build on OpenBSD:
+
+```shell
+doas pkg_add llvm cmake
+export LIBCLANG_PATH=/usr/local/llvm17/lib
+cargo build
+```
+
+You might also want to setup [`relayd(8)`](https://man.openbsd.org/relayd.8) to bind `0.0.0.0:443` and `0.0.0.0:1965` to the single listen port `4443`.
+
+Enable:
+
+```
+doas vi /etc/relayd.conf
+doas rcctl enable relayd
+doas rcctl start relayd
+```
+
+An example [`relayd.conf(5)`](https://man.openbsd.org/relayd.conf.5):
+
+```
+protocol "rubyshd" {
+        tcp { nodelay, socket buffer 65536 }
+}
+
+relay "rubyshd_gemini" {
+        listen on 0.0.0.0 port 1965
+        protocol "rubyshd"
+        forward to 127.0.0.1 port 4443
+}
+
+relay "rubyshd_https" {
+        listen on 0.0.0.0 port 443
+        protocol "rubyshd"
+        forward to 127.0.0.1 port 4443
+}
 ```
 
 ### Folder structure and configuration
