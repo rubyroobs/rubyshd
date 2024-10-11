@@ -231,15 +231,32 @@ daemon_execdir="/home/ruby/rubyshd"
 
 . /etc/rc.d/rc.subr
 
-rc_start() { 
-    export RUST_LOG="info"
-    export DEFAULT_HOSTNAME="ruby.sh"
-    export TLS_SERVER_CERTIFICATE_PEM_FILENAME="ruby.sh.fullchain.pem" 
-    export TLS_SERVER_PRIVATE_KEY_PEM_FILENAME="ruby.sh.pem"
-    exec /home/ruby/rubyshd/target/release/rubyshd & 
+rc_exec() { 
+    local _rcexec="su -fl -c ${daemon_class} -s /bin/sh ${daemon_user} -c"
+    [ "${daemon_rtable}" -eq "$(id -R)" ] ||
+      _rcexec="route -T ${daemon_rtable} exec ${_rcexec}"
+
+    local _set_monitor=":"
+    # Run non-daemons services in a different process group to avoid SIGHUP
+    # at boot.
+    if [ X"${rc_bg}" = X"YES" ]; then
+      _set_monitor="set -o monitor"
+    fi
+
+    ${_rcexec} "${_set_monitor}; \
+      ${daemon_logger:+set -o pipefail; } \
+      ${daemon_execdir:+cd ${daemon_execdir} && } \
+      export RUST_LOG="info" && \
+      export DEFAULT_HOSTNAME="ruby.sh" && \
+      export TLS_SERVER_CERTIFICATE_PEM_FILENAME="ruby.sh.fullchain.pem"  && \
+      export TLS_SERVER_PRIVATE_KEY_PEM_FILENAME="ruby.sh.pem" && \
+      $@ \
+      ${daemon_logger:+ 2>&1 |
+        logger -isp ${daemon_logger} -t ${_name}}"
 } 
 
 rc_bg=YES
+rc_reload=NO
 rc_cmd $1
 ```
 
