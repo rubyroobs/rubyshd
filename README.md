@@ -226,6 +226,7 @@ An example [`rc.d`](https://man.openbsd.org/rc.d) daemon control script:
 
 daemon="/home/ruby/rubyshd/target/release/rubyshd"
 daemon_user="ruby"
+daemon_logger="daemon.info"
 daemon_execdir="/home/ruby/rubyshd"
 
 . /etc/rc.d/rc.subr
