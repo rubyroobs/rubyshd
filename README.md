@@ -260,6 +260,17 @@ rc_reload=NO
 rc_cmd $1
 ```
 
+`rubyshd` doesn't support plaintext HTTP, so you may also want to redirect HTTP traffic on that port to 443. An example [`httpd.conf(5)`](https://man.openbsd.org/httpd.conf.5)
+
+```
+server "ruby.sh" {
+        listen on * port 80
+        location * {
+                block return 301 "https://$HTTP_HOST$REQUEST_URI"
+        }
+}
+```
+
 ## Future work
 
 - Better tests and CI
