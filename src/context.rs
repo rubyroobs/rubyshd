@@ -15,6 +15,7 @@ use handlebars::Handlebars;
 use log::{debug, error};
 use serde::Serialize;
 use serde_json::json;
+use walkdir::WalkDir;
 
 const MAX_FS_CACHE_ENTRIES: usize = 512;
 const MAX_FS_CACHE_LONG_TTL_MS: u64 = 14_400_000;
@@ -78,49 +79,48 @@ impl ServerContext {
     }
 
     fn register_handlebars_templates(&self) {
-        let base_data_path = format!("{}/", self.config().partials_path());
-
-        for entry in
-            glob(&format!("{}**/*.hbs", base_data_path)).expect("Failed to read data glob pattern")
+        for entry in WalkDir::new(self.config().partials_path())
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
         {
-            match entry {
-                Ok(path_buf) => {
-                    let partial_name = path_buf
-                        .to_str()
-                        .unwrap()
-                        .strip_prefix(&base_data_path)
-                        .unwrap()
-                        .strip_suffix(".hbs")
-                        .unwrap()
-                        .to_string();
+            let f_name = entry.file_name().to_string_lossy();
 
-                    match self.fs_read(path_buf) {
-                        Ok(data) => match std::str::from_utf8(&data) {
-                            Ok(value) => {
-                                let mut handlebars = self.handlebars.lock().unwrap();
-                                match handlebars.register_template_string(&partial_name, value) {
-                                    Ok(_) => {}
-                                    Err(err) => error!(
-                                        "ERROR registering handlebar partial {}: {}",
-                                        partial_name, err
-                                    ),
-                                }
+            if f_name.ends_with(".hbs") {
+                let path_buf = entry.into_path();
+
+                let partial_name = path_buf
+                    .to_str()
+                    .unwrap()
+                    .strip_prefix(&format!("{}/", self.config().partials_path()))
+                    .unwrap()
+                    .strip_suffix(".hbs")
+                    .unwrap()
+                    .to_string();
+
+                match self.fs_read(path_buf) {
+                    Ok(data) => match std::str::from_utf8(&data) {
+                        Ok(value) => {
+                            let mut handlebars = self.handlebars.lock().unwrap();
+                            match handlebars.register_template_string(&partial_name, value) {
+                                Ok(_) => {}
+                                Err(err) => error!(
+                                    "ERROR registering handlebar partial {}: {}",
+                                    partial_name, err
+                                ),
                             }
-                            Err(err) => error!(
-                                "ERROR loading handlebar partial {} as UTF-8: {}",
-                                partial_name, err
-                            ),
-                        },
-                        Err(err) => {
-                            error!(
-                                "ERROR loading handlebar partial file {}: {}",
-                                partial_name, err
-                            )
                         }
+                        Err(err) => error!(
+                            "ERROR loading handlebar partial {} as UTF-8: {}",
+                            partial_name, err
+                        ),
+                    },
+                    Err(err) => {
+                        error!(
+                            "ERROR loading handlebar partial file {}: {}",
+                            partial_name, err
+                        )
                     }
-                }
-                Err(err) => {
-                    error!("ERROR loading JSON files by glob: {:?}", err)
                 }
             }
         }
