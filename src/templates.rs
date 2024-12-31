@@ -329,6 +329,34 @@ impl HelperDef for pick_random_helper {
 }
 
 #[allow(non_camel_case_types)]
+pub struct ls_md_as_posts_helper;
+
+impl HelperDef for ls_helper {
+    fn call_inner<'reg: 'rc, 'rc>(
+        &self,
+        h: &Helper<'rc>,
+        _: &'reg Handlebars,
+        _: &'rc Context,
+        _: &mut RenderContext<'reg, 'rc>,
+    ) -> Result<ScopedJson<'reg>, RenderError> {
+        let param = h
+            .param(0)
+            .ok_or(RenderErrorReason::ParamNotFoundForIndex("ls", 0))?;
+
+        let path = param
+            .value()
+            .as_str()
+            .ok_or(RenderErrorReason::InvalidParamType("ls"))?;
+
+        let paths = fs::read_dir("./").unwrap();
+
+        for path in paths {
+            println!("Name: {}", path.unwrap().path().display())
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
 pub struct partial_for_markup_helper;
 
 impl HelperDef for partial_for_markup_helper {
