@@ -1,13 +1,13 @@
-use log::error;
-use rand::seq::{IteratorRandom as _, SliceRandom};
-use std::net::SocketAddr;
-use std::str::FromStr;
-use std::{env, fmt};
-
 use handlebars::{
     to_json, Context, Decorator, Handlebars, Helper, HelperDef, HelperResult, JsonRender, Output,
     RenderContext, RenderError, RenderErrorReason, ScopedJson,
 };
+use log::{error, info};
+use rand::seq::{IteratorRandom as _, SliceRandom};
+use serde_with::{DeserializeFromStr, SerializeDisplay};
+use std::net::SocketAddr;
+use std::str::FromStr;
+use std::{env, fmt};
 
 use crate::protocol::Protocol;
 use crate::request::Request;
@@ -15,7 +15,7 @@ use crate::response::{Response, Status};
 
 pub const DEFAULT_BLANK_PARTIAL_NAME: &str = "blank";
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, SerializeDisplay, DeserializeFromStr)]
 pub enum Markup {
     Html,
     Gemtext,
@@ -28,6 +28,28 @@ impl fmt::Display for Markup {
             Markup::Gemtext => write!(f, "Gemtext"),
             Markup::Html => write!(f, "HTML"),
             Markup::Markdown => write!(f, "Markdown"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseMarkupError;
+
+impl fmt::Display for ParseMarkupError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ParseMarkupError")
+    }
+}
+
+impl FromStr for Markup {
+    type Err = ParseMarkupError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Gemtext" => Ok(Markup::Gemtext),
+            "HTML" => Ok(Markup::Html),
+            "Markdown" => Ok(Markup::Markdown),
+            _ => Err(ParseMarkupError),
         }
     }
 }
@@ -49,19 +71,20 @@ impl Markup {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct TemplateRequestContext {
-    data: serde_json::Value,
-    peer_addr: SocketAddr,
-    path: String,
-    is_authenticated: bool,
-    is_anonymous: bool,
-    common_name: String,
-    protocol: String,
-    markup: String,
-    is_gemini: bool,
-    is_https: bool,
-    os_platform: String,
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct TemplateRequestContext {
+    pub meta: serde_json::Value,
+    pub data: serde_json::Value,
+    pub peer_addr: SocketAddr,
+    pub path: String,
+    pub is_authenticated: bool,
+    pub is_anonymous: bool,
+    pub common_name: String,
+    pub protocol: Protocol,
+    pub markup: Markup,
+    pub is_gemini: bool,
+    pub is_https: bool,
+    pub os_platform: String,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -79,7 +102,6 @@ pub fn initialize_handlebars(handlebars: &mut Handlebars) {
     );
     handlebars.register_helper("pick-random", Box::new(pick_random_helper));
     handlebars.register_helper("partial-for-markup", Box::new(partial_for_markup_helper));
-    handlebars.register_decorator("set", Box::new(set_decorator));
     handlebars.register_decorator("temporary-redirect", Box::new(temporary_redirect_decorator));
     handlebars.register_decorator("permanent-redirect", Box::new(permanent_redirect_decorator));
     handlebars.register_decorator("status", Box::new(status_decorator));
@@ -88,14 +110,13 @@ pub fn initialize_handlebars(handlebars: &mut Handlebars) {
 
 pub fn render_response_body_for_request(
     loaded_path: &str,
-    markup: Markup,
     request: &Request,
     response: &Response,
 ) -> Result<Response, Status> {
     let body = response.body().to_vec();
 
     match String::from_utf8(body) {
-        Ok(template_body) => match render_template(request, &template_body, markup) {
+        Ok(template_body) => match render_template(request, &template_body) {
             Ok((rendered_body, response_context)) => {
                 let status = match response_context.status {
                     Some(status_str) => match Status::from_str(&status_str) {
@@ -124,7 +145,7 @@ pub fn render_response_body_for_request(
 
                 let media_type = match response_context.media_type {
                     Some(context_media_type) => context_media_type.to_owned(),
-                    None => markup.media_type().to_owned(),
+                    None => request.template_context().markup.media_type().to_owned(),
                 };
 
                 match response_context.redirect_uri {
@@ -170,29 +191,14 @@ pub fn render_response_body_for_request(
 fn render_template(
     request: &Request,
     template_string: &str,
-    markup: Markup,
 ) -> Result<(String, TemplateResponseContext), handlebars::RenderError> {
     let mut template_string = template_string.to_string();
 
     template_string.push_str("\n{{private-context-serialize}}");
 
-    let request_data = TemplateRequestContext {
-        data: request.server_context().get_data(),
-        peer_addr: *request.peer_addr(),
-        path: (*request.url().path()).to_string(),
-        is_authenticated: !request.client_certificate_details().is_anonymous(),
-        is_anonymous: request.client_certificate_details().is_anonymous(),
-        common_name: request.client_certificate_details().common_name(),
-        protocol: request.protocol().to_string(),
-        markup: markup.to_string(),
-        is_gemini: request.protocol() == Protocol::Gemini,
-        is_https: request.protocol() == Protocol::Https,
-        os_platform: env::consts::OS.to_string(),
-    };
-
     match request
         .server_context()
-        .handlebars_render_template(&template_string, &request_data)
+        .handlebars_render_template(&template_string, &request.template_context())
     {
         Ok(raw_rendered_body) => {
             let (rendered_body, resp_context_str) = raw_rendered_body
@@ -216,22 +222,21 @@ pub fn render_markdown_response_for_request(
     request: &Request,
     response: &Response,
     loaded_path: &str,
-    target_markup: Markup,
 ) -> Result<Response, Status> {
     match String::from_utf8(response.body().to_vec()) {
         Ok(resp_body_str) => {
-            // Remove <?meta meta?> processing tags used to keep post-processable handlebars calls from being encoded
-            let strip_meta_tags = |str: String| -> String {
-                str.replace("<?meta ", "")
-                    .replace("<?meta", "")
-                    .replace(" meta?>", "")
-                    .replace("meta?>", "")
+            // Remove <?POSTPROCESS ... POSTPROCESS?> processing tags used to keep post-processable handlebars calls from being encoded
+            let strip_postprocess_tags = |str: String| -> String {
+                str.replace("<?POSTPROCESS ", "")
+                    .replace("<?POSTPROCESS", "")
+                    .replace(" POSTPROCESS?>", "")
+                    .replace("POSTPROCESS?>", "")
             };
 
-            let rendered_md = match target_markup {
+            let rendered_md = match request.template_context().markup {
                 Markup::Gemtext => {
                     // Strip BEFORE for md2gemtext as it borks HTML-looking things
-                    md2gemtext::convert(&strip_meta_tags(resp_body_str))
+                    md2gemtext::convert(&strip_postprocess_tags(resp_body_str))
                 }
                 Markup::Html => match markdown::to_html_with_options(
                     &resp_body_str,
@@ -245,29 +250,24 @@ pub fn render_markdown_response_for_request(
                 ) {
                     Ok(str) => {
                         // Strip AFTER for markdown::to_html_with_options as otherwise handlebars get turned into HTML entities
-                        strip_meta_tags(str)
+                        strip_postprocess_tags(str)
                     }
                     Err(err) => {
                         error!("Error converting markdown to HTML: {}", err);
                         return Err(Status::OtherServerError);
                     }
                 },
-                Markup::Markdown => strip_meta_tags(resp_body_str), // Markdown just needs the meta tags stripping...
+                Markup::Markdown => strip_postprocess_tags(resp_body_str), // Markdown just needs the meta tags stripping...
             };
 
             let md_response = Response::new(
                 *response.status(),
-                &target_markup.media_type(),
+                &request.template_context().protocol.media_type(),
                 rendered_md.as_bytes(),
                 false,
             );
 
-            match render_response_body_for_request(
-                loaded_path,
-                target_markup,
-                request,
-                &md_response,
-            ) {
+            match render_response_body_for_request(loaded_path, request, &md_response) {
                 Ok(rerendered_md_resp) => Ok(rerendered_md_resp),
                 Err(status) => Err(status),
             }
@@ -462,39 +462,6 @@ fn permanent_redirect_decorator<'reg: 'rc, 'rc>(
         if let Some(ref mut m) = data.as_object_mut() {
             m.insert("redirect_permanent".to_string(), to_json(true));
             m.insert("redirect_uri".to_string(), to_json(param.value().render()));
-        }
-    }
-    rc.set_context(new_ctx);
-    Ok(())
-}
-
-fn set_decorator<'reg: 'rc, 'rc>(
-    d: &Decorator,
-    _: &Handlebars,
-    ctx: &Context,
-    rc: &mut RenderContext,
-) -> Result<(), RenderError> {
-    let key = match d.param(0) {
-        Some(param) => match param.value().as_str() {
-            Some(key_str) => Ok(key_str),
-            None => Err(RenderErrorReason::ParamNotFoundForIndex("set", 0)),
-        },
-        None => Err(RenderErrorReason::ParamNotFoundForIndex("set", 0)),
-    }?;
-
-    let value = d
-        .param(1)
-        .ok_or(RenderErrorReason::ParamNotFoundForIndex("set", 1))?;
-
-    let mut new_ctx = match rc.context() {
-        Some(rc_ctx) => rc_ctx.as_ref().clone(),
-        None => ctx.clone(),
-    };
-
-    {
-        let data = new_ctx.data_mut();
-        if let Some(ref mut m) = data.as_object_mut() {
-            m.insert(key.to_string(), to_json(value.value().render()));
         }
     }
     rc.set_context(new_ctx);

@@ -99,8 +99,8 @@ async fn main() -> io::Result<()> {
             .await;
 
             match request {
-                Ok(request) => {
-                    let response = route_request(&request);
+                Ok(mut request) => {
+                    let response = route_request(&mut request);
 
                     request
                         .protocol()

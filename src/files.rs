@@ -1,15 +1,13 @@
-use log::error;
+use log::{error, info};
 
 use crate::request::Request;
 use crate::response::{Response, Status};
 use crate::templates::{render_response_body_for_request, Markup};
+use gray_matter::engine::YAML;
+use gray_matter::Matter;
 use std::path::PathBuf;
 
-pub fn try_load_files_with_template(
-    path: &str,
-    request: &Request,
-    markup: Markup,
-) -> Result<Response, Status> {
+pub fn try_load_file_for_path(path: &str, request: &mut Request) -> Result<Response, Status> {
     let mut try_path = path.to_string();
 
     if !try_path.ends_with(".hbs") {
@@ -30,9 +28,41 @@ pub fn try_load_files_with_template(
 
     // Exact match template (handlebars)
     match try_load_file(&try_path, &request) {
-        Ok(response) => match render_response_body_for_request(path, markup, request, &response) {
-            Ok(rendered_response) => Ok(rendered_response),
-            Err(status) => Err(status),
+        Ok(response) => match String::from_utf8(response.body().to_vec()) {
+            Ok(body) => {
+                let matter = Matter::<YAML>::new();
+                let result = matter.parse(&body);
+
+                if let Some(front_matter) = result.data {
+                    request.mut_template_context().meta = front_matter.into()
+                }
+
+                match render_response_body_for_request(
+                    path,
+                    request,
+                    &Response::new(
+                        *response.status(),
+                        response.media_type(),
+                        result.content.as_bytes(),
+                        response.cacheable(),
+                    ),
+                ) {
+                    Ok(rendered_response) => Ok(rendered_response),
+                    Err(status) => Err(status),
+                }
+            }
+            Err(err) => {
+                error!(
+                    "[{}] [{}] [{}] [{}] Unicode error reading {} (valid up to {})",
+                    request.protocol(),
+                    request.peer_addr(),
+                    request.client_certificate_details(),
+                    request.path(),
+                    path,
+                    err.utf8_error().valid_up_to()
+                );
+                Err(Status::OtherServerError)
+            }
         },
         Err(status) => Err(status),
     }

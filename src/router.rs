@@ -2,13 +2,13 @@ use std::path::PathBuf;
 
 use log::{error, info};
 
-use crate::files::try_load_files_with_template;
+use crate::files::try_load_file_for_path;
 use crate::protocol::Protocol;
 use crate::request::Request;
 use crate::response::{Response, Status};
 use crate::templates::{render_markdown_response_for_request, Markup};
 
-pub fn route_request(request: &Request) -> Response {
+pub fn route_request(request: &mut Request) -> Response {
     let os_path_str = format!(
         "{}{}",
         request.server_context().config().public_root_path(),
@@ -19,8 +19,6 @@ pub fn route_request(request: &Request) -> Response {
     let is_directory = path_buf.is_dir();
     let trailing_slash = os_path_str.ends_with("/");
 
-    let mut target_markup = Markup::default_for_protocol(request.protocol());
-
     // Generate a path stripped of known protocol-markup associated extensions + markdown/md
     let mut ext_stripped_os_path_str = os_path_str
         .strip_suffix(".md")
@@ -28,14 +26,14 @@ pub fn route_request(request: &Request) -> Response {
         .to_string();
 
     if os_path_str.ends_with(".md") {
-        target_markup = Markup::Markdown
+        request.mut_template_context().markup = Markup::Markdown
     }
 
     for try_ext in Protocol::Gemini.media_type_file_extensions() {
         let try_file_ext = &format!(".{}", try_ext);
 
         if os_path_str.ends_with(try_file_ext) {
-            target_markup = Markup::default_for_protocol(Protocol::Gemini)
+            request.mut_template_context().markup = Markup::default_for_protocol(Protocol::Gemini)
         }
 
         ext_stripped_os_path_str = ext_stripped_os_path_str
@@ -48,7 +46,7 @@ pub fn route_request(request: &Request) -> Response {
         let try_file_ext = &format!(".{}", try_ext);
 
         if os_path_str.ends_with(try_file_ext) {
-            target_markup = Markup::default_for_protocol(Protocol::Https)
+            request.mut_template_context().markup = Markup::default_for_protocol(Protocol::Https)
         }
 
         ext_stripped_os_path_str = ext_stripped_os_path_str
@@ -64,7 +62,7 @@ pub fn route_request(request: &Request) -> Response {
             false => format!("{}/index.hbs", os_path_str),
         };
 
-        match try_route_request_for_path(&try_path, request, target_markup) {
+        match try_route_request_for_path(&try_path, request) {
             Some(response) => {
                 return response;
             }
@@ -77,7 +75,7 @@ pub fn route_request(request: &Request) -> Response {
                 false => format!("{}/index.{}", os_path_str, try_ext),
             };
 
-            match try_route_request_for_path(&try_path, request, target_markup) {
+            match try_route_request_for_path(&try_path, request) {
                 Some(response) => {
                     return response;
                 }
@@ -87,7 +85,7 @@ pub fn route_request(request: &Request) -> Response {
     } else {
         // First try exact requested path UNLESS .md file extension which gets handled later
         if !os_path_str.ends_with(".md") {
-            match try_route_request_for_path(&os_path_str, request, target_markup) {
+            match try_route_request_for_path(&os_path_str, request) {
                 Some(response) => {
                     return response;
                 }
@@ -98,11 +96,7 @@ pub fn route_request(request: &Request) -> Response {
         // Next see if the protocol appropriate default is available
         // TODO: use Accept here for HTTP which would be more appropriate
         for try_ext in request.protocol().media_type_file_extensions() {
-            match try_route_request_for_path(
-                &format!("{}.{}", os_path_str, try_ext),
-                request,
-                target_markup,
-            ) {
+            match try_route_request_for_path(&format!("{}.{}", os_path_str, try_ext), request) {
                 Some(response) => {
                     return response;
                 }
@@ -112,14 +106,9 @@ pub fn route_request(request: &Request) -> Response {
 
         // Markdown
         let try_path = format!("{}.md", ext_stripped_os_path_str);
-        match try_route_request_for_path(&try_path, request, target_markup) {
+        match try_route_request_for_path(&try_path, request) {
             Some(response) => {
-                match render_markdown_response_for_request(
-                    request,
-                    &response,
-                    &try_path,
-                    target_markup,
-                ) {
+                match render_markdown_response_for_request(request, &response, &try_path) {
                     Ok(rendered_response) => {
                         return rendered_response;
                     }
@@ -155,12 +144,8 @@ pub fn route_request(request: &Request) -> Response {
 }
 
 // Tries to load a file, if it exists it will return a response with the contents or the error loading/rendering them
-fn try_route_request_for_path(
-    try_path: &str,
-    request: &Request,
-    markup: Markup,
-) -> Option<Response> {
-    match try_load_files_with_template(try_path, request, markup) {
+fn try_route_request_for_path(try_path: &str, request: &mut Request) -> Option<Response> {
+    match try_load_file_for_path(try_path, request) {
         Ok(response) => {
             info!(
                 "[{}] [{}] [{}] [{}] {} (from file: {})",

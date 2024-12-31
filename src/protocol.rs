@@ -2,9 +2,11 @@ use crate::context::ServerContext;
 use crate::request::Request;
 use crate::response::{Response, Status};
 use crate::tls::ClientCertificateDetails;
+use serde_with::{DeserializeFromStr, SerializeDisplay};
 use std::fmt;
 use std::io::Error;
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
@@ -22,10 +24,19 @@ fn newline_stripped_safe_str(str: &str) -> &str {
     str.lines().next().unwrap_or("")
 }
 
-#[derive(PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, SerializeDisplay, DeserializeFromStr)]
 pub enum Protocol {
     Gemini,
     Https,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseProtocolError;
+
+impl fmt::Display for ParseProtocolError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ParseProtocolError")
+    }
 }
 
 impl fmt::Display for Protocol {
@@ -33,6 +44,18 @@ impl fmt::Display for Protocol {
         match self {
             Protocol::Gemini => write!(f, "Gemini"),
             Protocol::Https => write!(f, "HTTPS"),
+        }
+    }
+}
+
+impl FromStr for Protocol {
+    type Err = ParseProtocolError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Gemini" => Ok(Protocol::Gemini),
+            "HTTPS" => Ok(Protocol::Https),
+            _ => Err(ParseProtocolError),
         }
     }
 }
@@ -192,7 +215,7 @@ impl Protocol {
                         let _ = Protocol::Gemini
                             .write_response(
                                 Response::new_for_request_and_status(
-                                    &Request::new(
+                                    &mut Request::new(
                                         server_context,
                                         peer_addr,
                                         Url::parse("gemini://localhost/").unwrap(),
@@ -216,7 +239,7 @@ impl Protocol {
                         let _ = Protocol::Gemini
                             .write_response(
                                 Response::new_for_request_and_status(
-                                    &Request::new(
+                                    &mut Request::new(
                                         server_context,
                                         peer_addr,
                                         Url::parse("gemini://localhost/").unwrap(),
@@ -248,7 +271,7 @@ impl Protocol {
                         let _ = Protocol::Https
                             .write_response(
                                 Response::new_for_request_and_status(
-                                    &Request::new(
+                                    &mut Request::new(
                                         server_context,
                                         peer_addr,
                                         Url::parse("https://localhost/").unwrap(),
@@ -269,7 +292,7 @@ impl Protocol {
                         let _ = Protocol::Https
                             .write_response(
                                 Response::new_for_request_and_status(
-                                    &Request::new(
+                                    &mut Request::new(
                                         server_context,
                                         peer_addr,
                                         Url::parse("https://localhost/").unwrap(),
@@ -303,7 +326,7 @@ impl Protocol {
                         let _ = Protocol::Https
                             .write_response(
                                 Response::new_for_request_and_status(
-                                    &Request::new(
+                                    &mut Request::new(
                                         server_context,
                                         peer_addr,
                                         Url::parse("https://localhost/").unwrap(),

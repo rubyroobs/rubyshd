@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr};
 
-use crate::{files::try_load_files_with_template, request::Request, templates::Markup};
+use crate::{files::try_load_file_for_path, request::Request, templates::Markup};
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Status {
@@ -56,6 +56,7 @@ impl FromStr for Status {
     }
 }
 
+#[derive(Clone)]
 pub struct Response {
     status: Status,
     media_type: String,
@@ -85,7 +86,7 @@ impl Response {
         }
     }
 
-    pub fn new_for_request_and_status(request: &Request, status: Status) -> Response {
+    pub fn new_for_request_and_status(request: &mut Request, status: Status) -> Response {
         for try_ext in request.protocol().media_type_file_extensions() {
             let try_path = format!(
                 "{}/{}.{}",
@@ -94,11 +95,7 @@ impl Response {
                 try_ext
             );
 
-            match try_load_files_with_template(
-                &try_path,
-                &request,
-                Markup::default_for_protocol(request.protocol()),
-            ) {
+            match try_load_file_for_path(&try_path, request) {
                 Ok(response) => {
                     return Response {
                         status: status,
