@@ -230,100 +230,120 @@ impl ServerContext {
                                             .unwrap_or(Pod::Null)
                                             .as_hashmap()
                                         {
-                                            let title = data
-                                                .get("title")
-                                                .unwrap_or(&Pod::Null)
-                                                .as_string()
-                                                .unwrap_or("Untitled page".to_string());
-
-                                            let description = data
-                                                .get("description")
-                                                .unwrap_or(&Pod::Null)
-                                                .as_string()
-                                                .ok();
-
-                                            let date = match data
-                                                .get("date")
-                                                .unwrap_or(&Pod::Null)
-                                                .as_string()
-                                                .ok()
-                                            {
-                                                Some(date_str) => {
-                                                    match DateTime::parse_from_rfc3339(&date_str) {
-                                                        Ok(date) => Some(date.with_timezone(&Utc)),
-                                                        Err(_) => None,
-                                                    }
-                                                }
-                                                None => None,
-                                            }
-                                            .unwrap_or(
-                                                file.metadata
-                                                    .modified()
-                                                    .unwrap_or(SystemTime::now())
-                                                    .into(),
-                                            );
-
-                                            let is_post = data
-                                                .get("post")
+                                            if !data
+                                                .get("unlisted")
                                                 .unwrap_or(&Pod::Null)
                                                 .as_bool()
-                                                .ok()
-                                                .unwrap_or(false);
+                                                .unwrap_or(false)
+                                            {
+                                                let title = data
+                                                    .get("title")
+                                                    .unwrap_or(&Pod::Null)
+                                                    .as_string()
+                                                    .unwrap_or("Untitled page".to_string());
 
-                                            // todo better protocol handling here
-                                            let (protocols, uri_path) = if let Some(uri_path) =
-                                                path_str.strip_suffix(".html.hbs")
-                                            {
-                                                ([Protocol::Https].iter(), uri_path.to_string())
-                                            } else if let Some(uri_path) =
-                                                path_str.strip_suffix(".gmi.hbs")
-                                            {
-                                                ([Protocol::Gemini].iter(), uri_path.to_string())
-                                            } else if let Some(uri_path) =
-                                                path_str.strip_suffix(".md.hbs")
-                                            {
-                                                (
-                                                    [Protocol::Https, Protocol::Gemini].iter(),
-                                                    uri_path.to_string(),
-                                                )
-                                            } else {
-                                                (([].iter()), "".to_string())
-                                            };
+                                                let description = data
+                                                    .get("description")
+                                                    .unwrap_or(&Pod::Null)
+                                                    .as_string()
+                                                    .ok();
 
-                                            let normalized_uri_path = if uri_path
-                                                .ends_with("/index")
-                                            {
-                                                let base = uri_path
-                                                    .strip_prefix(self.config().public_root_path())
-                                                    .unwrap()
-                                                    .to_string();
-                                                match base.strip_suffix("/index") {
-                                                    Some(path) if path == "" => "/".to_string(),
-                                                    Some(path) => path.to_string(),
-                                                    None => base,
-                                                }
-                                            } else {
-                                                uri_path
-                                                    .strip_prefix(self.config().public_root_path())
-                                                    .unwrap()
-                                                    .to_string()
-                                            };
-
-                                            protocols
-                                                .map(|protocol| PageMetadata {
-                                                    title: title.to_string(),
-                                                    path: normalized_uri_path.to_string(),
-                                                    protocol: *protocol,
-                                                    description: match &description {
-                                                        Some(description) => {
-                                                            Some(description.to_string())
+                                                let date = match data
+                                                    .get("date")
+                                                    .unwrap_or(&Pod::Null)
+                                                    .as_string()
+                                                    .ok()
+                                                {
+                                                    Some(date_str) => {
+                                                        match DateTime::parse_from_rfc3339(
+                                                            &date_str,
+                                                        ) {
+                                                            Ok(date) => {
+                                                                Some(date.with_timezone(&Utc))
+                                                            }
+                                                            Err(_) => None,
                                                         }
-                                                        None => None,
-                                                    },
-                                                    date: date,
-                                                    is_post: is_post,
-                                                })
-                                                .collect::<Vec<PageMetadata>>()
+                                                    }
+                                                    None => None,
+                                                }
+                                                .unwrap_or(
+                                                    file.metadata
+                                                        .modified()
+                                                        .unwrap_or(SystemTime::now())
+                                                        .into(),
+                                                );
+
+                                                let is_post = data
+                                                    .get("post")
+                                                    .unwrap_or(&Pod::Null)
+                                                    .as_bool()
+                                                    .ok()
+                                                    .unwrap_or(false);
+
+                                                // todo better protocol handling here
+                                                let (protocols, uri_path) = if let Some(uri_path) =
+                                                    path_str.strip_suffix(".html.hbs")
+                                                {
+                                                    ([Protocol::Https].iter(), uri_path.to_string())
+                                                } else if let Some(uri_path) =
+                                                    path_str.strip_suffix(".gmi.hbs")
+                                                {
+                                                    (
+                                                        [Protocol::Gemini].iter(),
+                                                        uri_path.to_string(),
+                                                    )
+                                                } else if let Some(uri_path) =
+                                                    path_str.strip_suffix(".md.hbs")
+                                                {
+                                                    (
+                                                        [Protocol::Https, Protocol::Gemini].iter(),
+                                                        uri_path.to_string(),
+                                                    )
+                                                } else {
+                                                    (([].iter()), "".to_string())
+                                                };
+
+                                                let normalized_uri_path = if uri_path
+                                                    .ends_with("/index")
+                                                {
+                                                    let base = uri_path
+                                                        .strip_prefix(
+                                                            self.config().public_root_path(),
+                                                        )
+                                                        .unwrap()
+                                                        .to_string();
+                                                    match base.strip_suffix("/index") {
+                                                        Some(path) if path == "" => "/".to_string(),
+                                                        Some(path) => path.to_string(),
+                                                        None => base,
+                                                    }
+                                                } else {
+                                                    uri_path
+                                                        .strip_prefix(
+                                                            self.config().public_root_path(),
+                                                        )
+                                                        .unwrap()
+                                                        .to_string()
+                                                };
+
+                                                protocols
+                                                    .map(|protocol| PageMetadata {
+                                                        title: title.to_string(),
+                                                        path: normalized_uri_path.to_string(),
+                                                        protocol: *protocol,
+                                                        description: match &description {
+                                                            Some(description) => {
+                                                                Some(description.to_string())
+                                                            }
+                                                            None => None,
+                                                        },
+                                                        date: date,
+                                                        is_post: is_post,
+                                                    })
+                                                    .collect::<Vec<PageMetadata>>()
+                                            } else {
+                                                Vec::<PageMetadata>::new()
+                                            }
                                         } else {
                                             Vec::<PageMetadata>::new()
                                         }
