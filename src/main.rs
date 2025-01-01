@@ -60,7 +60,7 @@ async fn main() -> io::Result<()> {
         server_context.config()
     );
 
-    info!("Page Metatadata: {:#?}", server_context.get_page_metadata());
+    debug!("Page Metatadata: {:#?}", server_context.get_page_metadata());
 
     setup_pledge_and_unveil(server_context.config());
 

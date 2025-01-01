@@ -2,6 +2,7 @@ use crate::context::ServerContext;
 use crate::protocol::Protocol;
 use crate::templates::{Markup, TemplateRequestContext};
 use crate::tls::ClientCertificateDetails;
+use serde_json::json;
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -29,8 +30,9 @@ impl Request {
         };
 
         let template_context = TemplateRequestContext {
-            meta: serde_json::Value::Null,
+            meta: json!({}),
             data: server_context.get_data(),
+            posts: server_context.get_sorted_posts_for_protocol(protocol),
             peer_addr: peer_addr,
             path: (url.path()).to_string(),
             is_authenticated: !client_certificate_details.is_anonymous(),

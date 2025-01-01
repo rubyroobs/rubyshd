@@ -1,4 +1,5 @@
 use std::{
+    cmp::Reverse,
     ffi::{OsStr, OsString},
     fs::{self, Metadata},
     path::PathBuf,
@@ -29,13 +30,15 @@ const MAX_FS_CACHE_SHORT_TTL_MS: u64 = 10_000;
 const MAX_DATA_CACHE_ENTRIES: usize = 512;
 const MAX_DATA_CACHE_TTL_MS: u64 = 10_000;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+
 pub struct PageMetadata {
     path: String,
     protocol: Protocol,
     title: String,
     description: Option<String>,
-    date: DateTime<Utc>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
     is_post: bool,
 }
 
@@ -211,6 +214,19 @@ impl ServerContext {
         }
     }
 
+    pub fn get_sorted_posts_for_protocol(&self, protocol: Protocol) -> Vec<PageMetadata> {
+        let mut posts = self
+            .get_page_metadata()
+            .into_iter()
+            .filter(|pm| pm.is_post && pm.protocol == protocol)
+            .collect::<Vec<PageMetadata>>();
+
+        posts.sort_by_key(|pm| Reverse(pm.created_at));
+
+        posts
+    }
+
+    // TODO: make this function less insane
     pub fn get_page_metadata(&self) -> Vec<PageMetadata> {
         WalkDir::new(self.config().public_root_path())
             .follow_links(false)
@@ -248,8 +264,8 @@ impl ServerContext {
                                                     .as_string()
                                                     .ok();
 
-                                                let date = match data
-                                                    .get("date")
+                                                let created_at = match data
+                                                    .get("created_at")
                                                     .unwrap_or(&Pod::Null)
                                                     .as_string()
                                                     .ok()
@@ -267,7 +283,32 @@ impl ServerContext {
                                                     None => None,
                                                 }
                                                 .unwrap_or(
-                                                    file.metadata
+                                                    file.metadata()
+                                                        .modified()
+                                                        .unwrap_or(SystemTime::now())
+                                                        .into(),
+                                                );
+
+                                                let updated_at = match data
+                                                    .get("updated_at")
+                                                    .unwrap_or(&Pod::Null)
+                                                    .as_string()
+                                                    .ok()
+                                                {
+                                                    Some(date_str) => {
+                                                        match DateTime::parse_from_rfc3339(
+                                                            &date_str,
+                                                        ) {
+                                                            Ok(date) => {
+                                                                Some(date.with_timezone(&Utc))
+                                                            }
+                                                            Err(_) => None,
+                                                        }
+                                                    }
+                                                    None => None,
+                                                }
+                                                .unwrap_or(
+                                                    file.metadata()
                                                         .modified()
                                                         .unwrap_or(SystemTime::now())
                                                         .into(),
@@ -337,7 +378,8 @@ impl ServerContext {
                                                             }
                                                             None => None,
                                                         },
-                                                        date: date,
+                                                        created_at: created_at,
+                                                        updated_at: updated_at,
                                                         is_post: is_post,
                                                     })
                                                     .collect::<Vec<PageMetadata>>()

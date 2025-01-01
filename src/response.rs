@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr};
 
-use crate::{files::try_load_file_for_path, request::Request, templates::Markup};
+use crate::{files::try_load_file_for_path, request::Request};
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Status {

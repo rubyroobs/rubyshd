@@ -2,13 +2,15 @@ use handlebars::{
     to_json, Context, Decorator, Handlebars, Helper, HelperDef, HelperResult, JsonRender, Output,
     RenderContext, RenderError, RenderErrorReason, ScopedJson,
 };
-use log::{error, info};
+use handlebars_chrono::HandlebarsChronoDateTime;
+use log::error;
 use rand::seq::{IteratorRandom as _, SliceRandom};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
+use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use std::{env, fmt};
 
+use crate::context::PageMetadata;
 use crate::protocol::Protocol;
 use crate::request::Request;
 use crate::response::{Response, Status};
@@ -75,6 +77,7 @@ impl Markup {
 pub struct TemplateRequestContext {
     pub meta: serde_json::Value,
     pub data: serde_json::Value,
+    pub posts: Vec<PageMetadata>,
     pub peer_addr: SocketAddr,
     pub path: String,
     pub is_authenticated: bool,
@@ -96,6 +99,7 @@ struct TemplateResponseContext {
 }
 
 pub fn initialize_handlebars(handlebars: &mut Handlebars) {
+    handlebars.register_helper("datetime", Box::new(HandlebarsChronoDateTime));
     handlebars.register_helper(
         "private-context-serialize",
         Box::new(serialize_context_helper),
@@ -234,10 +238,7 @@ pub fn render_markdown_response_for_request(
             };
 
             let rendered_md = match request.template_context().markup {
-                Markup::Gemtext => {
-                    // Strip BEFORE for md2gemtext as it borks HTML-looking things
-                    md2gemtext::convert(&strip_postprocess_tags(resp_body_str))
-                }
+                Markup::Gemtext => strip_postprocess_tags(md2gemtext::convert(&resp_body_str)),
                 Markup::Html => match markdown::to_html_with_options(
                     &resp_body_str,
                     &markdown::Options {
@@ -335,7 +336,7 @@ impl HelperDef for partial_for_markup_helper {
     fn call_inner<'reg: 'rc, 'rc>(
         &self,
         h: &Helper<'rc>,
-        _: &'reg Handlebars,
+        hb: &'reg Handlebars,
         rc: &'rc Context,
         _: &mut RenderContext<'reg, 'rc>,
     ) -> Result<ScopedJson<'reg>, RenderError> {
