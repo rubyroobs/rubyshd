@@ -10,6 +10,7 @@ async-std = { version = "1.12.0", features = ["attributes"], optional = true }
 bytes = "1.6.0"
 cached = "0.53.1"
 caches = "0.2" 
+chrono = "0.4.39"
 env_logger = "0.10" # 0.11 requires 1.71 MSRV even as a dev-dep (due to manifest features)
 gray_matter = "0.2.8"
 handlebars = "6.1.0"

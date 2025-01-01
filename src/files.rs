@@ -94,15 +94,15 @@ fn try_load_file(path: &str, request: &Request) -> Result<Response, Status> {
     }
 
     if path_buf.is_file() {
-        let resp_body = request.server_context().fs_read(path_buf);
+        let resp_file = request.server_context().fs_read(path_buf);
 
-        return match resp_body {
-            Ok(body) => Ok(Response::new(
+        return match resp_file {
+            Ok(file) => Ok(Response::new(
                 Status::Success,
                 mime_guess::from_path(&path)
                     .first_raw()
                     .unwrap_or(&request.protocol().media_type()),
-                &body,
+                &file.data(),
                 true,
             )),
             Err(_) => Err(Status::Unauthorized),
