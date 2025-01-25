@@ -4,6 +4,7 @@
 // changelog:
 // - updated to use newer version of pulldown-cmark
 // - (updated tests to account for html block, reworked link/image handling, gemtext qualified as gmi)
+// - rewrite lists of links into a group of links
 //
 use gemtext as gmi;
 use pulldown_cmark as md;
@@ -84,28 +85,50 @@ pub fn convert(markdown_text: &str) -> String {
         }
     }
 
-    let nodes = state
-        .nodes
-        .into_iter()
-        .filter(|cluster| !cluster.is_empty())
-        .map(condense)
-        .collect::<Vec<_>>()
-        .join(&gmi::Node::blank());
+    // reduce clusters to keep adjacent links together
+    let mut reduced_node_clusters = Vec::<Vec<gmi::Node>>::new();
+    let mut buffer = Vec::<gmi::Node>::new();
+    for cluster in state.nodes.into_iter() {
+        if cluster.is_empty() {
+            continue;
+        }
+
+        match cluster.as_slice() {
+            [gmi::Node::Text(text), gmi::Node::Link {
+                name: Some(name), ..
+            }] if text == name => {
+                if !buffer.is_empty() {
+                    reduced_node_clusters.push(buffer);
+                    buffer = Vec::<gmi::Node>::new();
+                }
+                reduced_node_clusters.push(vec![cluster[1].clone()]);
+            }
+            [gmi::Node::ListItem(text), gmi::Node::Link {
+                name: Some(name), ..
+            }] if text == name => {
+                buffer.push(cluster[1].clone());
+            }
+            _ => {
+                if !buffer.is_empty() {
+                    reduced_node_clusters.push(buffer);
+                    buffer = Vec::<gmi::Node>::new();
+                }
+                reduced_node_clusters.push(cluster);
+            }
+        }
+    }
+    if !buffer.is_empty() {
+        reduced_node_clusters.push(buffer);
+    }
+
+    let nodes = reduced_node_clusters.join(&gmi::Node::blank());
+
     let mut result: Vec<u8> = vec![];
     gmi::render(nodes, &mut result).expect("gemtext::render somehow failed");
     String::from_utf8(result).expect("gemtext::render somehow produced invalid UTF-8")
 }
 
 type NodeCluster = Vec<gmi::Node>;
-
-fn condense(original: NodeCluster) -> NodeCluster {
-    match original.as_slice() {
-        [gmi::Node::Text(text), gmi::Node::Link {
-            name: Some(name), ..
-        }] if text == name => vec![original[1].clone()],
-        _ => original,
-    }
-}
 
 enum NodeType {
     Text,
@@ -290,6 +313,12 @@ sample
 some `code` and some `` fancy`code `` and *italics*
 and __bold__ and ***semi-overlapping* bold *and* italics**
 
+[this is an inline link](http://example.com)
+
+* [this is an inline link in a list](http://example.com)
+* [this is another inline link in a list](http://example.org)
+* [this is yet another inline link in a list](http://example.net)
+
 this paragraph has [one link](http://example.net)
 
 this [paragraph](http://example.com) has [several links](http://example.org)
@@ -319,6 +348,12 @@ sample
 * don't be his friend
 
 some `code` and some `fancy`code` and _italics_ and **bold** and **_semi-overlapping_ bold _and_ italics**
+
+=> http://example.com this is an inline link
+
+=> http://example.com this is an inline link in a list
+=> http://example.org this is another inline link in a list
+=> http://example.net this is yet another inline link in a list
 
 this paragraph has one link
 => http://example.net one link
