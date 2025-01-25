@@ -187,6 +187,12 @@ export LIBCLANG_PATH=/usr/local/llvm17/lib
 cargo build # or cargo build --release
 ```
 
+One-liner to rebuild for release:
+
+```shell
+LIBCLANG_PATH=/usr/local/llvm17/lib cargo build --release
+```
+
 ### Deploying
 
 You might also want to setup [`relayd(8)`](https://man.openbsd.org/relayd.8) to bind `0.0.0.0:443` and `0.0.0.0:1965` to the single listen port `4443`.
