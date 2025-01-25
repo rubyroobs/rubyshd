@@ -1,6 +1,7 @@
 mod config;
 mod context;
 mod files;
+mod md2gemtext;
 mod protocol;
 mod request;
 mod response;

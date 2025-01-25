@@ -1193,16 +1193,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "md2gemtext"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ad2427c485f47550ea77fe0b17cb83d0ad26cee4311be1f42e7e676077e7ef0"
-dependencies = [
- "gemtext",
- "pulldown-cmark",
-]
-
-[[package]]
 name = "memchr"
 version = "2.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1575,11 +1565,11 @@ dependencies = [
 
 [[package]]
 name = "pulldown-cmark"
-version = "0.8.0"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffade02495f22453cd593159ea2f59827aae7f53fa8323f756799b670881dcf8"
+checksum = "f86ba2052aebccc42cbbb3ed234b8b13ce76f75c3551a303cb2bcffcff12bb14"
 dependencies = [
- "bitflags 1.3.2",
+ "bitflags 2.5.0",
  "memchr",
  "unicase",
 ]
@@ -1711,16 +1701,17 @@ dependencies = [
  "caches",
  "chrono",
  "env_logger",
+ "gemtext",
  "gray_matter",
  "handlebars",
  "handlebars-chrono",
  "httparse",
  "log",
  "markdown",
- "md2gemtext",
  "mime_guess",
  "mio",
  "openbsd",
+ "pulldown-cmark",
  "rand",
  "rcgen",
  "rustls",

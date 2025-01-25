@@ -11,6 +11,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 
 use crate::context::PageMetadata;
+use crate::md2gemtext;
 use crate::protocol::Protocol;
 use crate::request::Request;
 use crate::response::{Response, Status};

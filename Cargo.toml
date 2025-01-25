@@ -12,16 +12,17 @@ cached = "0.53.1"
 caches = "0.2" 
 chrono = "0.4.39"
 env_logger = "0.10" # 0.11 requires 1.71 MSRV even as a dev-dep (due to manifest features)
+gemtext = "0.2.1"
 gray_matter = "0.2.8"
 handlebars = "6.1.0"
 handlebars-chrono = { version = "0.2.1", features = [ "locale", "timezone" ] }
 httparse = "1.8.0"
 log = { version = "0.4.4" }
 markdown = "1.0.0-alpha.21"
-md2gemtext = "0.1.0"
 mime_guess = "2.0.5"
 mio = { version = "0.8", features = ["net", "os-poll"] }
 pki-types = { package = "rustls-pki-types", version = "1", features = ["std"] }
+pulldown-cmark = { version = "0.12.2", default-features = false }
 rand = "0.8.5"
 rcgen = { version = "0.13", features = ["pem", "aws_lc_rs"], default-features = false }
 rustls = { version = "0.23.4", features = [ "logging" ]}
