@@ -1,0 +1,260 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Theme Color/Fonts (default/alternative) */
+  :root {
+    --font-family-header: 'Cherish', sans-serif;
+    --font-family-sans: 'Basiic', sans-serif;
+    --font-family-serif: 'Romance A', serif;
+    --font-family-mono: monospace;
+    --color-background: #241b30;
+    --color-border: #f2f2e3;
+    --color-text: #f2f2e3;
+    --color-link: #ff00f6;
+    --color-hover: #b300ad;
+    --color-accent: #5f9ea0;
+  }
+
+  :root[class~="theme-alt-1"] {
+    --font-family-header: 'Cherish', sans-serif;
+    --font-family-sans: 'Basiic', sans-serif;
+    --font-family-serif: 'Romance A', serif;
+    --font-family-mono: monospace;
+    --color-background: #708090;
+    --color-border: #ffe4e1;
+    --color-text: #ffe4e1;
+    --color-link: #ffc0cb;
+    --color-hover: #cc99a2;
+    --color-accent: #5f9ea0;
+  }
+
+  /* base background repeating, inspo from https://codepen.io/shasa2308/details/rNVZbzd */
+  @-webkit-keyframes asciis-fall {
+    0% {
+      top: -10%;
+    }
+    100% {
+      top: 100%;
+    }
+  }
+  @-webkit-keyframes asciis-shake {
+    0% {
+      -webkit-transform: translateX(0px);
+      transform: translateX(0px);
+    }
+    50% {
+      -webkit-transform: translateX(20px);
+      transform: translateX(20px);
+    }
+    100% {
+      -webkit-transform: translateX(0px);
+      transform: translateX(0px);
+    }
+  }
+  @keyframes asciis-fall {
+    0% {
+      top: -10%;
+    }
+    100% {
+      top: 100%;
+    }
+  }
+  @keyframes asciis-shake {
+    0% {
+      transform: translateX(0px);
+    }
+    25% {
+      transform: translateX(15px);
+    }
+    50% {
+      transform: translateX(-15px);
+    }
+    100% {
+      transform: translateX(0px);
+    }
+  }
+
+  .ascii {
+    color: var(--color-border);
+    font-family: var(--font-family-sans);
+    position: fixed;
+    top: -10%;
+    z-index: -99999;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    cursor: default;
+    -webkit-animation-name: asciis-fall, asciis-shake;
+    -webkit-animation-duration: 5s, 3s;
+    -webkit-animation-timing-function: linear, ease-in-out;
+    -webkit-animation-iteration-count: infinite, infinite;
+    -webkit-animation-play-state: running, running;
+    animation-name: asciis-fall, asciis-shake;
+    animation-duration: 5s, 3s;
+    animation-timing-function: linear, ease-in-out;
+    animation-iteration-count: infinite, infinite;
+    animation-play-state: running, running;
+  }
+  .ascii:nth-of-type(0) {
+    left: 1%;
+    -webkit-animation-delay: 0s, 0s;
+    animation-delay: 0s, 0s;
+  }
+  .ascii:nth-of-type(1) {
+    left: 10%;
+    -webkit-animation-delay: 1s, 1s;
+    animation-delay: 1s, 1s;
+  }
+  .ascii:nth-of-type(2) {
+    left: 20%;
+    -webkit-animation-delay: 6s, 0.5s;
+    animation-delay: 6s, 0.5s;
+  }
+  .ascii:nth-of-type(3) {
+    left: 30%;
+    -webkit-animation-delay: 4s, 2s;
+    animation-delay: 4s, 2s;
+  }
+  .ascii:nth-of-type(4) {
+    left: 40%;
+    -webkit-animation-delay: 2s, 2s;
+    animation-delay: 2s, 2s;
+  }
+  .ascii:nth-of-type(5) {
+    left: 50%;
+    -webkit-animation-delay: 8s, 3s;
+    animation-delay: 8s, 3s;
+  }
+  .ascii:nth-of-type(6) {
+    left: 60%;
+    -webkit-animation-delay: 6s, 2s;
+    animation-delay: 6s, 2s;
+  }
+  .ascii:nth-of-type(7) {
+    left: 70%;
+    -webkit-animation-delay: 2.5s, 1s;
+    animation-delay: 2.5s, 1s;
+  }
+  .ascii:nth-of-type(8) {
+    left: 80%;
+    -webkit-animation-delay: 1s, 0s;
+    animation-delay: 1s, 0s;
+  }
+  .ascii:nth-of-type(9) {
+    left: 90%;
+    -webkit-animation-delay: 3s, 1.5s;
+    animation-delay: 3s, 1.5s;
+  }
+
+  /* text etc */
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-text font-header font-bold;
+  }
+
+  h1 {
+    @apply text-3xl;
+  }
+
+  h2 {
+    @apply text-2xl;
+  }
+
+  h3 {
+    @apply text-xl;
+  }
+
+  p, ul, li, span {
+    @apply text-text font-sans;
+  }
+
+  a, button {
+    @apply text-link hover:text-hover;
+  }
+
+  hr {
+    @apply mx-auto my-2 w-5/6 border border-text border-dotted;
+  }
+
+  /* pure css tabs */
+  .tab [type=radio] ~ .tab-content {
+    display: none;
+  }
+  
+  .tab [type=radio]:checked ~ .tab-content {
+    display:block;
+  }
+
+  /* gemini style links */
+  li > p > a:before {
+    content: "=> ";
+  }
+
+  /* Cherish (asterism) */
+  @font-face {
+    font-family: 'Cherish';
+    src: url('../fonts/Cherish.eot');
+    src: url('../fonts/Cherish.eot?#iefix') format('embedded-opentype'),
+         url('../fonts/Cherish.woff2') format('woff2'),
+         url('../fonts/Cherish.woff') format('woff'),
+         url('../fonts/Cherish.ttf') format('truetype'),
+         url('../fonts/Cherish.svg#Cherish') format('svg');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: 'basiic';
+    src: url('../fonts/basiic.eot');
+    src: url('../fonts/basiic.eot?#iefix') format('embedded-opentype'),
+         url('../fonts/basiic.woff2') format('woff2'),
+         url('../fonts/basiic.woff') format('woff'),
+         url('../fonts/basiic.ttf') format('truetype'),
+         url('../fonts/basiic.svg#basiic') format('svg');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: 'Romance A';
+    src: url('../fonts/RomanceA.eot');
+    src: url('../fonts/RomanceA.eot?#iefix') format('embedded-opentype'),
+         url('../fonts/RomanceA.woff2') format('woff2'),
+         url('../fonts/RomanceA.woff') format('woff'),
+         url('../fonts/RomanceA.ttf') format('truetype'),
+         url('../fonts/RomanceA.svg#RomanceA') format('svg');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  /* @font-face {
+    font-family: 'Romance B';
+    src: url('../fonts/RomanceB.eot');
+    src: url('../fonts/RomanceB.eot?#iefix') format('embedded-opentype'),
+         url('../fonts/RomanceB.woff2') format('woff2'),
+         url('../fonts/RomanceB.woff') format('woff'),
+         url('../fonts/RomanceB.ttf') format('truetype'),
+         url('../fonts/RomanceB.svg#RomanceB') format('svg');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+  } */
+
+  /* @font-face {
+    font-family: 'Spirit';
+    src: url('../fonts/Spirit.eot');
+    src: url('../fonts/Spirit.eot?#iefix') format('embedded-opentype'),
+         url('../fonts/Spirit.woff2') format('woff2'),
+         url('../fonts/Spirit.woff') format('woff'),
+         url('../fonts/Spirit.ttf') format('truetype'),
+         url('../fonts/Spirit.svg#Spirit') format('svg');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+  } */
+}
